@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { createInstitution } from "@/app/actions/institutions";
+import { createInstitution, updateInstitution } from "@/app/actions/institutions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,19 +15,41 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function InstitutionForm() {
+export function InstitutionForm({
+  institution,
+}: {
+  institution?: { id: string; name: string; shortName: string; status: string };
+} = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [shortName, setShortName] = useState("");
+  const [name, setName] = useState(institution?.name ?? "");
+  const [shortName, setShortName] = useState(institution?.shortName ?? "");
+  const [status, setStatus] = useState(institution?.status ?? "active");
   const [loading, setLoading] = useState(false);
+  const editing = Boolean(institution);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button />}>Add institution</DialogTrigger>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next && institution) {
+          setName(institution.name);
+          setShortName(institution.shortName);
+          setStatus(institution.status);
+        }
+      }}
+    >
+      <DialogTrigger
+        render={
+          <Button size={editing ? "sm" : "default"} variant={editing ? "outline" : "default"} />
+        }
+      >
+        {editing ? "Edit" : "Add institution"}
+      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add institution</DialogTitle>
+          <DialogTitle>{editing ? "Edit institution" : "Add institution"}</DialogTitle>
         </DialogHeader>
         <form
           className="space-y-4"
@@ -35,11 +57,16 @@ export function InstitutionForm() {
             e.preventDefault();
             setLoading(true);
             try {
-              await createInstitution({ name, shortName });
-              toast.success("Institution created");
+              if (institution) {
+                await updateInstitution(institution.id, { name, shortName, status });
+                toast.success("Institution updated");
+              } else {
+                await createInstitution({ name, shortName });
+                toast.success("Institution created");
+                setName("");
+                setShortName("");
+              }
               setOpen(false);
-              setName("");
-              setShortName("");
               router.refresh();
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Failed");
@@ -61,8 +88,21 @@ export function InstitutionForm() {
               required
             />
           </div>
+          {editing ? (
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <select
+                className="flex h-8 w-full rounded-lg border px-2 text-sm"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value="active">active</option>
+                <option value="archived">archived</option>
+              </select>
+            </div>
+          ) : null}
           <Button type="submit" disabled={loading}>
-            {loading ? "Saving…" : "Create"}
+            {loading ? "Saving…" : editing ? "Save" : "Create"}
           </Button>
         </form>
       </DialogContent>

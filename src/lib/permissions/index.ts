@@ -150,7 +150,8 @@ export function primaryRole(ctx: AuthContext): RoleAssignment["role"] | null {
   return null;
 }
 
-export function homePathFor(ctx: AuthContext): string {
+/** Workspace home for the user's primary role, or null if they have no role. */
+export function homePathFor(ctx: AuthContext): string | null {
   const role = primaryRole(ctx);
   switch (role) {
     case "admin":
@@ -162,7 +163,7 @@ export function homePathFor(ctx: AuthContext): string {
     case "adjudicator":
       return "/adjudicator";
     default:
-      return "/login";
+      return null;
   }
 }
 

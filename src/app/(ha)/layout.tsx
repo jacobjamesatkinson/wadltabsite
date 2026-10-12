@@ -2,7 +2,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { haNav } from "@/components/nav/nav-config";
 import { requirePerm } from "@/lib/auth/session";
 
-export { dynamic, runtime } from "@/lib/db-dynamic";
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export default async function HaLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requirePerm("ha:venue_manage");

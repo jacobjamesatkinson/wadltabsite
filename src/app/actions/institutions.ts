@@ -83,3 +83,25 @@ export async function archiveInstitution(id: string) {
   });
   revalidatePath("/admin/institutions");
 }
+
+export async function deleteInstitution(id: string) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "institutions:manage");
+
+  const linkedTeams = await db.query.teams.findFirst({
+    where: (t, { eq: e }) => e(t.institutionId, id),
+  });
+  if (linkedTeams) {
+    throw new Error("Cannot delete institution with teams — archive it instead");
+  }
+
+  await db.delete(institutions).where(eq(institutions.id, id));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "institution.delete",
+    entityType: "institution",
+    entityId: id,
+  });
+  revalidatePath("/admin/institutions");
+}

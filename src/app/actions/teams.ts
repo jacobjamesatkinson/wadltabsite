@@ -23,6 +23,78 @@ const teamSchema = z.object({
   identifier: z.string().min(1),
 });
 
+export async function updateTeam(id: string, input: z.infer<typeof teamSchema> & { status?: string }) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  const data = teamSchema.extend({ status: z.string().optional() }).parse(input);
+
+  const team = await db.query.teams.findFirst({
+    where: (t, { eq: e }) => e(t.id, id),
+  });
+  if (!team) throw new Error("NOT_FOUND");
+
+  if (hasPermission(ctx, "teams:manage_all")) {
+    // ok
+  } else if (hasPermission(ctx, "teams:manage_own")) {
+    if (!canAccessInstitution(ctx, team.institutionId)) throw new Error("FORBIDDEN");
+    if (!canAccessInstitution(ctx, data.institutionId)) throw new Error("FORBIDDEN");
+  } else {
+    throw new Error("FORBIDDEN");
+  }
+
+  await db
+    .update(teams)
+    .set({
+      competitionId: data.competitionId,
+      institutionId: data.institutionId,
+      divisionId: data.divisionId ?? null,
+      name: data.name,
+      identifier: data.identifier.toUpperCase(),
+      status: data.status ?? team.status,
+      updatedAt: new Date(),
+    })
+    .where(eq(teams.id, id));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "team.update",
+    entityType: "team",
+    entityId: id,
+    details: data,
+  });
+  revalidatePath("/admin/teams");
+  revalidatePath("/coordinator/teams");
+}
+
+export async function deleteTeam(id: string) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+
+  const team = await db.query.teams.findFirst({
+    where: (t, { eq: e }) => e(t.id, id),
+  });
+  if (!team) throw new Error("NOT_FOUND");
+
+  if (hasPermission(ctx, "teams:manage_all")) {
+    // ok
+  } else if (hasPermission(ctx, "teams:manage_own")) {
+    if (!canAccessInstitution(ctx, team.institutionId)) throw new Error("FORBIDDEN");
+  } else {
+    throw new Error("FORBIDDEN");
+  }
+
+  await db.delete(speakers).where(eq(speakers.teamId, id));
+  await db.delete(teamAccessTokens).where(eq(teamAccessTokens.teamId, id));
+  await db.delete(teams).where(eq(teams.id, id));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "team.delete",
+    entityType: "team",
+    entityId: id,
+  });
+  revalidatePath("/admin/teams");
+  revalidatePath("/coordinator/teams");
+}
+
 export async function createTeam(input: z.infer<typeof teamSchema>) {
   const ctx = await getAuthContext();
   if (!ctx) throw new Error("UNAUTHORIZED");

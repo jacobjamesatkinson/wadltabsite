@@ -71,6 +71,91 @@ export async function createRoom(input: {
   return { id };
 }
 
+export async function updateVenue(
+  id: string,
+  input: { name: string; address?: string; status?: string }
+) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "venues:manage");
+  const data = z
+    .object({
+      name: z.string().min(1),
+      address: z.string().optional(),
+      status: z.string().optional(),
+    })
+    .parse(input);
+  await db
+    .update(venues)
+    .set({
+      name: data.name,
+      address: data.address,
+      status: data.status ?? "active",
+      updatedAt: new Date(),
+    })
+    .where(eq(venues.id, id));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "venue.update",
+    entityType: "venue",
+    entityId: id,
+    details: data,
+  });
+  revalidatePath("/admin/venues");
+  revalidatePath("/ha/venues");
+}
+
+export async function deleteVenue(id: string) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "venues:manage");
+  await db.delete(rooms).where(eq(rooms.venueId, id));
+  await db.delete(venues).where(eq(venues.id, id));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "venue.delete",
+    entityType: "venue",
+    entityId: id,
+  });
+  revalidatePath("/admin/venues");
+  revalidatePath("/ha/venues");
+}
+
+export async function updateRoom(
+  roomId: string,
+  input: { identifier: string; capacity?: number | null; available?: boolean }
+) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  if (!hasPermission(ctx, "venues:manage") && !hasPermission(ctx, "ha:venue_manage")) {
+    throw new Error("FORBIDDEN");
+  }
+  const data = z
+    .object({
+      identifier: z.string().min(1),
+      capacity: z.number().nullable().optional(),
+      available: z.boolean().optional(),
+    })
+    .parse(input);
+  await db
+    .update(rooms)
+    .set({
+      identifier: data.identifier,
+      capacity: data.capacity ?? null,
+      available: data.available ?? true,
+    })
+    .where(eq(rooms.id, roomId));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "room.update",
+    entityType: "room",
+    entityId: roomId,
+    details: data,
+  });
+  revalidatePath("/admin/venues");
+  revalidatePath("/ha/venues");
+}
+
 export async function deleteRoom(roomId: string) {
   const ctx = await getAuthContext();
   if (!ctx) throw new Error("UNAUTHORIZED");

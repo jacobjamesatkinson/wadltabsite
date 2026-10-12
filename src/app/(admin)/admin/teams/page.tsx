@@ -1,4 +1,6 @@
 import { db } from "@/db";
+import { deleteTeam } from "@/app/actions/teams";
+import { DeleteButton } from "@/components/delete-button";
 import { PageHeader } from "@/components/page-header";
 import {
   Table,
@@ -26,6 +28,14 @@ export default async function TeamsPage() {
     speakerCount.set(s.teamId, (speakerCount.get(s.teamId) ?? 0) + 1);
   }
 
+  const competitionOpts = competitions.map((c) => ({ id: c.id, name: c.name }));
+  const institutionOpts = institutions.map((i) => ({ id: i.id, name: i.name }));
+  const divisionOpts = divisions.map((d) => ({
+    id: d.id,
+    name: d.name,
+    competitionId: d.competitionId,
+  }));
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -33,13 +43,9 @@ export default async function TeamsPage() {
         description="Competition teams, speakers and private access links"
         actions={
           <TeamForm
-            competitions={competitions.map((c) => ({ id: c.id, name: c.name }))}
-            institutions={institutions.map((i) => ({ id: i.id, name: i.name }))}
-            divisions={divisions.map((d) => ({
-              id: d.id,
-              name: d.name,
-              competitionId: d.competitionId,
-            }))}
+            competitions={competitionOpts}
+            institutions={institutionOpts}
+            divisions={divisionOpts}
           />
         }
       />
@@ -51,7 +57,7 @@ export default async function TeamsPage() {
               <TableHead>Institution</TableHead>
               <TableHead>W–L</TableHead>
               <TableHead>Speakers</TableHead>
-              <TableHead className="text-right">Access</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -67,7 +73,19 @@ export default async function TeamsPage() {
                 </TableCell>
                 <TableCell>{speakerCount.get(t.id) ?? 0}</TableCell>
                 <TableCell className="text-right">
-                  <TeamTokenButton teamId={t.id} />
+                  <div className="flex justify-end gap-2">
+                    <TeamTokenButton teamId={t.id} />
+                    <TeamForm
+                      competitions={competitionOpts}
+                      institutions={institutionOpts}
+                      divisions={divisionOpts}
+                      team={t}
+                    />
+                    <DeleteButton
+                      confirmTitle={`Delete ${t.name}?`}
+                      onDelete={deleteTeam.bind(null, t.id)}
+                    />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { divisions, rounds } from "@/db/schema";
+import { deleteCompetition, deleteRound } from "@/app/actions/competitions";
+import { DeleteButton } from "@/components/delete-button";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CompetitionEditForm } from "../competition-edit-form";
 import { AddRoundForm } from "./add-round-form";
 import { StatusActions } from "./status-actions";
 
@@ -34,7 +37,18 @@ export default async function CompetitionDetailPage({
       <PageHeader
         title={competition.name}
         description={`${competition.season} · ${competition.shortName}`}
-        actions={<StatusActions id={id} status={competition.status} />}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <CompetitionEditForm competition={competition} />
+            <StatusActions id={id} status={competition.status} />
+            <DeleteButton
+              confirmTitle={`Delete ${competition.name}?`}
+              confirmDescription="Teams, rounds and draws for this competition will also be removed."
+              onDelete={deleteCompetition.bind(null, id)}
+              redirectTo="/admin/competitions"
+            />
+          </div>
+        }
       />
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">Status</span>
@@ -75,6 +89,7 @@ export default async function CompetitionDetailPage({
                 <TableHead>#</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Draw</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -86,6 +101,12 @@ export default async function CompetitionDetailPage({
                     <TableCell>{r.name}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">{r.drawStatus}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DeleteButton
+                        confirmTitle={`Delete ${r.name}?`}
+                        onDelete={deleteRound.bind(null, r.id)}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

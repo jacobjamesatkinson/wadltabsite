@@ -8,12 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function InviteForm() {
+export function InviteForm({
+  institutions,
+}: {
+  institutions: Array<{ id: string; name: string; shortName: string }>;
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"coordinator" | "adjudicator" | "head_adjudicator" | "admin">(
     "coordinator"
   );
+  const [institutionId, setInstitutionId] = useState(institutions[0]?.id ?? "");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
 
   return (
@@ -22,7 +27,11 @@ export function InviteForm() {
       onSubmit={async (e) => {
         e.preventDefault();
         try {
-          const res = await createInvitation({ email, role });
+          const res = await createInvitation({
+            email,
+            role,
+            institutionId: role === "coordinator" ? institutionId : undefined,
+          });
           setInviteUrl(res.inviteUrl);
           await navigator.clipboard.writeText(res.inviteUrl);
           toast.success("Invitation created — link copied");
@@ -56,6 +65,23 @@ export function InviteForm() {
             <option value="admin">Admin</option>
           </select>
         </div>
+        {role === "coordinator" ? (
+          <div className="space-y-1 sm:col-span-2">
+            <Label>Institution</Label>
+            <select
+              className="flex h-8 w-full rounded-lg border px-2 text-sm"
+              value={institutionId}
+              onChange={(e) => setInstitutionId(e.target.value)}
+              required
+            >
+              {institutions.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name} ({i.shortName})
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
       </div>
       <Button type="submit" size="sm">
         Create invitation

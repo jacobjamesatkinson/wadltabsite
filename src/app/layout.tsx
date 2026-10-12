@@ -5,13 +5,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 const plexSans = IBM_Plex_Sans({
-  variable: "--font-sans",
+  variable: "--font-ibm-plex-sans",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
 
 const plexMono = IBM_Plex_Mono({
-  variable: "--font-geist-mono",
+  variable: "--font-ibm-plex-mono",
   subsets: ["latin"],
   weight: ["400", "500"],
 });
@@ -28,8 +28,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${plexSans.variable} ${plexMono.variable} antialiased`}>
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className={`${plexSans.variable} ${plexMono.variable} font-sans antialiased`}
+        suppressHydrationWarning
+      >
         <TooltipProvider>
           {children}
           <Toaster />

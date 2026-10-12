@@ -1,4 +1,5 @@
-export { dynamic, runtime } from "@/lib/db-dynamic";
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 import { redirect } from "next/navigation";
 import { LinkButton } from "@/components/link-button";
@@ -6,7 +7,10 @@ import { getAuthContext, homePathFor } from "@/lib/auth/session";
 
 export default async function HomePage() {
   const ctx = await getAuthContext();
-  if (ctx) redirect(homePathFor(ctx));
+  if (ctx?.status === "active") {
+    const dest = homePathFor(ctx);
+    if (dest) redirect(dest);
+  }
 
   return (
     <main className="flex min-h-screen flex-col bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100 via-background to-background">

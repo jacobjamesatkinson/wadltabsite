@@ -1,4 +1,6 @@
 import { db } from "@/db";
+import { deleteRoom, deleteVenue } from "@/app/actions/venues";
+import { DeleteButton } from "@/components/delete-button";
 import { PageHeader } from "@/components/page-header";
 import {
   Table,
@@ -9,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { VenueForm } from "./venue-form";
-import { RoomForm } from "./room-form";
+import { RoomEditButton, RoomForm } from "./room-form";
 
 export default async function VenuesPage() {
   const [venueRows, roomRows] = await Promise.all([
@@ -34,7 +36,15 @@ export default async function VenuesPage() {
                   <h2 className="font-semibold">{v.name}</h2>
                   <p className="text-sm text-muted-foreground">{v.address}</p>
                 </div>
-                <RoomForm venueId={v.id} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <VenueForm venue={v} />
+                  <DeleteButton
+                    confirmTitle={`Delete ${v.name}?`}
+                    confirmDescription="Rooms in this venue will also be deleted."
+                    onDelete={deleteVenue.bind(null, v.id)}
+                  />
+                  <RoomForm venueId={v.id} />
+                </div>
               </div>
               <Table>
                 <TableHeader>
@@ -42,12 +52,13 @@ export default async function VenuesPage() {
                     <TableHead>Room</TableHead>
                     <TableHead>Capacity</TableHead>
                     <TableHead>Available</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rooms.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-muted-foreground">
+                      <TableCell colSpan={4} className="text-muted-foreground">
                         No rooms
                       </TableCell>
                     </TableRow>
@@ -57,6 +68,12 @@ export default async function VenuesPage() {
                         <TableCell>{r.identifier}</TableCell>
                         <TableCell>{r.capacity ?? "—"}</TableCell>
                         <TableCell>{r.available ? "Yes" : "No"}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <RoomEditButton room={r} />
+                            <DeleteButton onDelete={deleteRoom.bind(null, r.id)} />
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))
                   )}

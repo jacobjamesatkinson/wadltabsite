@@ -1,4 +1,5 @@
-export { dynamic, runtime } from "@/lib/db-dynamic";
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";

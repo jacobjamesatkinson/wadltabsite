@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { createTeam } from "@/app/actions/teams";
+import { createTeam, updateTeam } from "@/app/actions/teams";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,23 +15,36 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function TeamForm({
-  competitions,
-  institutions,
-  divisions,
-}: {
+type TeamFormProps = {
   competitions: Array<{ id: string; name: string }>;
   institutions: Array<{ id: string; name: string }>;
   divisions: Array<{ id: string; name: string; competitionId: string }>;
-}) {
+  team?: {
+    id: string;
+    competitionId: string;
+    institutionId: string;
+    divisionId: string | null;
+    name: string;
+    identifier: string;
+    status: string;
+  };
+};
+
+export function TeamForm({ competitions, institutions, divisions, team }: TeamFormProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [competitionId, setCompetitionId] = useState(competitions[0]?.id ?? "");
-  const [institutionId, setInstitutionId] = useState(institutions[0]?.id ?? "");
-  const [divisionId, setDivisionId] = useState("");
-  const [name, setName] = useState("");
-  const [identifier, setIdentifier] = useState("");
+  const [competitionId, setCompetitionId] = useState(
+    team?.competitionId ?? competitions[0]?.id ?? ""
+  );
+  const [institutionId, setInstitutionId] = useState(
+    team?.institutionId ?? institutions[0]?.id ?? ""
+  );
+  const [divisionId, setDivisionId] = useState(team?.divisionId ?? "");
+  const [name, setName] = useState(team?.name ?? "");
+  const [identifier, setIdentifier] = useState(team?.identifier ?? "");
+  const [status, setStatus] = useState(team?.status ?? "active");
   const [loading, setLoading] = useState(false);
+  const editing = Boolean(team);
 
   const filteredDivisions = useMemo(
     () => divisions.filter((d) => d.competitionId === competitionId),
@@ -39,11 +52,30 @@ export function TeamForm({
   );
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button />}>Add team</DialogTrigger>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next && team) {
+          setCompetitionId(team.competitionId);
+          setInstitutionId(team.institutionId);
+          setDivisionId(team.divisionId ?? "");
+          setName(team.name);
+          setIdentifier(team.identifier);
+          setStatus(team.status);
+        }
+      }}
+    >
+      <DialogTrigger
+        render={
+          <Button size={editing ? "sm" : "default"} variant={editing ? "outline" : "default"} />
+        }
+      >
+        {editing ? "Edit" : "Add team"}
+      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add team</DialogTitle>
+          <DialogTitle>{editing ? "Edit team" : "Add team"}</DialogTitle>
         </DialogHeader>
         <form
           className="space-y-3"
@@ -51,14 +83,21 @@ export function TeamForm({
             e.preventDefault();
             setLoading(true);
             try {
-              await createTeam({
+              const payload = {
                 competitionId,
                 institutionId,
                 divisionId: divisionId || null,
                 name,
                 identifier,
-              });
-              toast.success("Team created");
+                status,
+              };
+              if (team) {
+                await updateTeam(team.id, payload);
+                toast.success("Team updated");
+              } else {
+                await createTeam(payload);
+                toast.success("Team created");
+              }
               setOpen(false);
               router.refresh();
             } catch (err) {
@@ -123,8 +162,21 @@ export function TeamForm({
               required
             />
           </div>
+          {editing ? (
+            <div className="space-y-1">
+              <Label>Status</Label>
+              <select
+                className="flex h-8 w-full rounded-lg border px-2 text-sm"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value="active">active</option>
+                <option value="withdrawn">withdrawn</option>
+              </select>
+            </div>
+          ) : null}
           <Button type="submit" disabled={loading}>
-            Create
+            {loading ? "Saving…" : editing ? "Save" : "Create"}
           </Button>
         </form>
       </DialogContent>

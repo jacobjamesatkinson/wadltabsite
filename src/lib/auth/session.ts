@@ -30,7 +30,7 @@ export async function requireAuth(): Promise<AuthContext> {
 export async function requirePerm(permission: Permission): Promise<AuthContext> {
   const ctx = await requireAuth();
   if (!hasPermission(ctx, permission)) {
-    redirect(homePathFor(ctx));
+    redirect(homePathFor(ctx) ?? "/");
   }
   return ctx;
 }

@@ -2,19 +2,167 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
+import { hashPassword } from "better-auth/crypto";
 import { db } from "@/db";
 import {
+  account,
   adjudicatorAssignments,
   adjudicatorAvailability,
   adjudicatorProfiles,
   debates,
   teams,
+  user,
+  userRoles,
 } from "@/db/schema";
 import { allocateAdjudicators } from "@/lib/adjudicators/allocate";
 import { writeAudit } from "@/lib/audit";
 import { getAuthContext } from "@/lib/auth/session";
 import { createId } from "@/lib/id";
 import { hasPermission, requirePermission } from "@/lib/permissions";
+
+export async function createAdjudicator(input: {
+  name: string;
+  email: string;
+  password?: string;
+  qualifications?: string;
+}) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "adjudicators:manage");
+  const data = z
+    .object({
+      name: z.string().min(1),
+      email: z.string().email(),
+      password: z.string().min(8).optional(),
+      qualifications: z.string().optional(),
+    })
+    .parse(input);
+
+  let u = await db.query.user.findFirst({
+    where: (t, { eq: e }) => e(t.email, data.email.toLowerCase()),
+  });
+  if (!u) {
+    const userId = createId("usr");
+    await db.insert(user).values({
+      id: userId,
+      name: data.name,
+      email: data.email.toLowerCase(),
+      emailVerified: true,
+      status: "active",
+    });
+    if (data.password) {
+      await db.insert(account).values({
+        id: createId("acc"),
+        accountId: userId,
+        providerId: "credential",
+        userId,
+        password: await hashPassword(data.password),
+      });
+    }
+    u = (await db.query.user.findFirst({
+      where: (t, { eq: e }) => e(t.id, userId),
+    }))!;
+  }
+
+  const existingRole = await db.query.userRoles.findFirst({
+    where: (t, { and: a, eq: e }) =>
+      a(e(t.userId, u!.id), e(t.role, "adjudicator")),
+  });
+  if (!existingRole) {
+    await db.insert(userRoles).values({
+      id: createId("role"),
+      userId: u.id,
+      role: "adjudicator",
+    });
+  }
+
+  const existingProfile = await db.query.adjudicatorProfiles.findFirst({
+    where: (t, { eq: e }) => e(t.userId, u!.id),
+  });
+  if (existingProfile) throw new Error("Adjudicator profile already exists");
+
+  const id = createId("adj");
+  await db.insert(adjudicatorProfiles).values({
+    id,
+    userId: u.id,
+    qualifications: data.qualifications,
+    active: true,
+  });
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "adjudicator.create",
+    entityType: "adjudicator_profile",
+    entityId: id,
+    details: { email: data.email },
+  });
+  revalidatePath("/admin/adjudicators");
+  revalidatePath("/admin/accounts");
+  return { id };
+}
+
+export async function updateAdjudicatorProfile(
+  id: string,
+  input: { qualifications?: string; notes?: string; active?: boolean; name?: string }
+) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "adjudicators:manage");
+  const data = z
+    .object({
+      qualifications: z.string().optional(),
+      notes: z.string().optional(),
+      active: z.boolean().optional(),
+      name: z.string().min(1).optional(),
+    })
+    .parse(input);
+
+  const profile = await db.query.adjudicatorProfiles.findFirst({
+    where: (t, { eq: e }) => e(t.id, id),
+  });
+  if (!profile) throw new Error("NOT_FOUND");
+
+  await db
+    .update(adjudicatorProfiles)
+    .set({
+      qualifications: data.qualifications ?? profile.qualifications,
+      notes: data.notes ?? profile.notes,
+      active: data.active ?? profile.active,
+    })
+    .where(eq(adjudicatorProfiles.id, id));
+
+  if (data.name) {
+    await db
+      .update(user)
+      .set({ name: data.name, updatedAt: new Date() })
+      .where(eq(user.id, profile.userId));
+  }
+
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "adjudicator.update",
+    entityType: "adjudicator_profile",
+    entityId: id,
+    details: data,
+  });
+  revalidatePath("/admin/adjudicators");
+}
+
+export async function deleteAdjudicatorProfile(id: string) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "adjudicators:manage");
+  await db.delete(adjudicatorAssignments).where(eq(adjudicatorAssignments.adjudicatorId, id));
+  await db.delete(adjudicatorAvailability).where(eq(adjudicatorAvailability.adjudicatorId, id));
+  await db.delete(adjudicatorProfiles).where(eq(adjudicatorProfiles.id, id));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "adjudicator.delete",
+    entityType: "adjudicator_profile",
+    entityId: id,
+  });
+  revalidatePath("/admin/adjudicators");
+}
 
 export async function setAvailability(
   adjudicatorId: string,
