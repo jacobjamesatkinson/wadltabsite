@@ -22,22 +22,43 @@ const globalFor = globalThis as unknown as {
   wadlPgClient?: ReturnType<typeof postgres>;
 };
 
-function createPgliteDb(): AppDb {
-  if (globalFor.wadlDb && globalFor.wadlPglite) return globalFor.wadlDb;
-
+function pgliteDataDir() {
   const rawDir =
     process.env.PGLITE_DATA_DIR ||
     path.join(process.cwd(), "data", "pglite");
-  // Next may pass file URLs in some bundling contexts — normalise to string path
-  const dataDir =
-    typeof rawDir === "string" && rawDir.startsWith("file:")
-      ? fileURLToPath(rawDir)
-      : String(rawDir);
+  if (typeof rawDir === "string" && rawDir.startsWith("file:")) {
+    return fileURLToPath(rawDir);
+  }
+  return String(rawDir);
+}
 
+function clearStalePgliteLock(dataDir: string) {
+  const pidFile = path.join(dataDir, "postmaster.pid");
+  if (!fs.existsSync(pidFile)) return;
+  try {
+    fs.unlinkSync(pidFile);
+  } catch {
+    // ignore
+  }
+}
+
+function createPgliteDb(): AppDb {
+  if (globalFor.wadlDb && globalFor.wadlPglite) return globalFor.wadlDb;
+
+  const dataDir = pgliteDataDir();
   fs.mkdirSync(dataDir, { recursive: true });
-  globalFor.wadlPglite = new PGlite(dataDir);
-  globalFor.wadlDb = drizzlePglite(globalFor.wadlPglite, { schema });
-  return globalFor.wadlDb;
+  clearStalePgliteLock(dataDir);
+
+  try {
+    globalFor.wadlPglite = new PGlite(dataDir);
+    globalFor.wadlDb = drizzlePglite(globalFor.wadlPglite, { schema });
+    return globalFor.wadlDb;
+  } catch (err) {
+    clearStalePgliteLock(dataDir);
+    globalFor.wadlPglite = new PGlite(dataDir);
+    globalFor.wadlDb = drizzlePglite(globalFor.wadlPglite, { schema });
+    return globalFor.wadlDb;
+  }
 }
 
 function createPostgresDb(): AppDb {
@@ -69,7 +90,17 @@ export type Database = AppDb;
 export async function ensureDbReady() {
   const real = getDb();
   if (isPgliteMode() && globalFor.wadlPglite) {
-    await globalFor.wadlPglite.waitReady;
+    try {
+      await globalFor.wadlPglite.waitReady;
+      await globalFor.wadlPglite.query("select 1");
+    } catch (err) {
+      console.error(
+        "[db] PGlite data appears corrupt or locked.",
+        err instanceof Error ? err.message : err,
+        "\nReset with: Remove-Item -Recurse -Force data\\pglite; pnpm db:setup"
+      );
+      throw err;
+    }
   }
   return real;
 }

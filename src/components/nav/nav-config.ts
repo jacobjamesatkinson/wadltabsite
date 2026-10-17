@@ -16,7 +16,10 @@ export type NavIconName =
   | "Building2"
   | "Clock"
   | "ListChecks"
-  | "UserCircle";
+  | "UserCircle"
+  | "Eye"
+  | "Shuffle"
+  | "CheckCircle2";
 
 export type NavItem = {
   title: string;
@@ -25,19 +28,72 @@ export type NavItem = {
   permission?: Permission;
 };
 
-export const adminNav: NavItem[] = [
+export type ClientNavItem = {
+  title: string;
+  href: string;
+  icon: NavIconName;
+};
+
+export type RoundNavItem = {
+  id: string;
+  name: string;
+  number: number;
+};
+
+export const ROUND_STEPS = [
+  {
+    title: "Availability",
+    slug: "availability",
+    icon: "CheckCircle2" as const,
+  },
+  { title: "Draw", slug: "draw", icon: "Shuffle" as const },
+  { title: "Display", slug: "display", icon: "Eye" as const },
+  { title: "Results", slug: "results", icon: "ClipboardList" as const },
+] as const;
+
+export const adminSetupNav: NavItem[] = [
   { title: "Overview", href: "/admin", icon: "LayoutDashboard" },
-  { title: "Competitions", href: "/admin/competitions", icon: "Trophy", permission: "competitions:manage" },
-  { title: "Draws", href: "/admin/draws", icon: "CalendarDays", permission: "draws:manage" },
   { title: "Teams", href: "/admin/teams", icon: "Users", permission: "teams:manage_all" },
-  { title: "Institutions", href: "/admin/institutions", icon: "School", permission: "institutions:manage" },
-  { title: "Adjudicators", href: "/admin/adjudicators", icon: "Gavel", permission: "adjudicators:manage" },
+  {
+    title: "Institutions",
+    href: "/admin/institutions",
+    icon: "School",
+    permission: "institutions:manage",
+  },
+  {
+    title: "Adjudicators",
+    href: "/admin/adjudicators",
+    icon: "Gavel",
+    permission: "adjudicators:manage",
+  },
   { title: "Venues", href: "/admin/venues", icon: "MapPin", permission: "venues:manage" },
-  { title: "Results", href: "/admin/results", icon: "ClipboardList", permission: "results:manage" },
+];
+
+export const adminSettingsNav: NavItem[] = [
   { title: "Accounts", href: "/admin/accounts", icon: "Shield", permission: "accounts:manage" },
   { title: "Audit log", href: "/admin/audit", icon: "ScrollText", permission: "audit:view" },
-  { title: "Settings", href: "/admin/settings", icon: "Settings", permission: "admin:manage" },
+  {
+    title: "Competitions",
+    href: "/admin/settings",
+    icon: "Trophy",
+    permission: "competitions:manage",
+  },
+  {
+    title: "Manage Rounds",
+    href: "/admin/settings/rounds",
+    icon: "CalendarDays",
+    permission: "competitions:manage",
+  },
+  {
+    title: "Manage Divisions",
+    href: "/admin/settings/divisions",
+    icon: "ListChecks",
+    permission: "competitions:manage",
+  },
 ];
+
+/** @deprecated Prefer adminSetupNav + rounds + adminSettingsNav */
+export const adminNav: NavItem[] = [...adminSetupNav, ...adminSettingsNav];
 
 export const coordinatorNav: NavItem[] = [
   { title: "Overview", href: "/coordinator", icon: "LayoutDashboard" },

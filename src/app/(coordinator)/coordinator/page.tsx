@@ -2,6 +2,7 @@ import { inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { teams } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
+import { SectionCards } from "@/components/section-cards";
 import { requireAuth } from "@/lib/auth/session";
 import { institutionIdsFor } from "@/lib/permissions";
 
@@ -25,21 +26,30 @@ export default async function CoordinatorOverviewPage() {
         title="Coordinator overview"
         description="Your institutions, teams and published draws"
       />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border p-4">
-          <p className="text-xs uppercase text-muted-foreground">Institutions</p>
-          <p className="mt-2 text-3xl font-semibold">{institutions.length}</p>
-          <ul className="mt-3 space-y-1 text-sm">
-            {institutions.map((i) => (
-              <li key={i.id}>{i.name}</li>
-            ))}
-          </ul>
-        </div>
-        <div className="rounded-lg border p-4">
-          <p className="text-xs uppercase text-muted-foreground">Teams</p>
-          <p className="mt-2 text-3xl font-semibold">{teamRows.length}</p>
-        </div>
-      </div>
+      <SectionCards
+        cards={[
+          {
+            label: "Institutions",
+            value: institutions.length,
+            hint: institutions.map((i) => i.shortName).join(", ") || "None assigned",
+          },
+          {
+            label: "Teams",
+            value: teamRows.length,
+            hint: "Across your institutions",
+          },
+        ]}
+      />
+      {institutions.length > 0 ? (
+        <ul className="space-y-2 text-sm">
+          {institutions.map((i) => (
+            <li key={i.id} className="rounded-lg border px-4 py-3">
+              <p className="font-medium">{i.name}</p>
+              <p className="text-muted-foreground">{i.shortName}</p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

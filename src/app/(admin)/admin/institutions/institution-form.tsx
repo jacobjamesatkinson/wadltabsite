@@ -76,8 +76,14 @@ export function InstitutionForm({
           }}
         >
           <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+            <Label htmlFor="name">Institution name</Label>
+            <Input
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Perth Modern School"
+              required
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="short">Short name</Label>
@@ -85,8 +91,12 @@ export function InstitutionForm({
               id="short"
               value={shortName}
               onChange={(e) => setShortName(e.target.value)}
+              placeholder="e.g. PMOD"
               required
             />
+            <p className="text-xs text-muted-foreground">
+              Used as the team prefix in draws (e.g. PMOD 1)
+            </p>
           </div>
           {editing ? (
             <div className="space-y-2">

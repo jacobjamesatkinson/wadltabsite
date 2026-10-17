@@ -1,35 +1,66 @@
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
-import { AppSidebar } from "./app-sidebar";
-import type { NavItem } from "@/components/nav/nav-config";
+import { AppSidebar } from "@/components/app-sidebar";
+import { SiteHeader } from "@/components/site-header";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import type {
+  ClientNavItem,
+  NavItem,
+  RoundNavItem,
+} from "@/components/nav/nav-config";
 import { hasPermission } from "@/lib/permissions";
 import type { AuthContext } from "@/lib/permissions/types";
+
+function toClientItems(items: NavItem[], ctx: AuthContext): ClientNavItem[] {
+  return items
+    .filter((item) => !item.permission || hasPermission(ctx, item.permission))
+    .map(({ title, href, icon }) => ({ title, href, icon }));
+}
 
 export function AppShell({
   ctx,
   items,
+  rounds,
+  settingsItems,
   title,
   children,
 }: {
   ctx: AuthContext;
   items: NavItem[];
+  rounds?: RoundNavItem[];
+  settingsItems?: NavItem[];
   title: string;
   children: React.ReactNode;
 }) {
-  const filtered = items.filter(
-    (item) => !item.permission || hasPermission(ctx, item.permission)
-  );
+  const filtered = toClientItems(items, ctx);
+  const settings = settingsItems
+    ? toClientItems(settingsItems, ctx)
+    : undefined;
 
   return (
-    <SidebarProvider>
-      <AppSidebar items={filtered} title={title} userName={ctx.name} />
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar
+        variant="inset"
+        title={title}
+        items={filtered}
+        rounds={rounds}
+        settingsItems={settings}
+        user={{ name: ctx.name, email: ctx.email }}
+      />
       <SidebarInset>
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <span className="text-sm font-medium text-muted-foreground">{title}</span>
-        </header>
-        <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">{children}</div>
+        <SiteHeader title={title} />
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-4 px-4 py-4 md:gap-6 md:px-6 md:py-6">
+              {children}
+            </div>
+          </div>
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );

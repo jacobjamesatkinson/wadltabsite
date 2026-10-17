@@ -1,6 +1,8 @@
 import { db } from "@/db";
 import { PageHeader } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
+import { SectionCards } from "@/components/section-cards";
+import { getSiteCompetition, getSiteRounds } from "@/lib/competition";
 import {
   Table,
   TableBody,
@@ -11,65 +13,90 @@ import {
 } from "@/components/ui/table";
 
 export default async function AdminOverviewPage() {
-  const [competitionCount, teamCount, institutionCount, roundCount] =
-    await Promise.all([
-      db.query.competitions.findMany().then((r) => r.length),
-      db.query.teams.findMany().then((r) => r.length),
-      db.query.institutions.findMany().then((r) => r.length),
-      db.query.rounds.findMany().then((r) => r.length),
-    ]);
+  const [competition, rounds, teamCount, institutionCount] = await Promise.all([
+    getSiteCompetition(),
+    getSiteRounds(),
+    db.query.teams.findMany().then((r) => r.length),
+    db.query.institutions.findMany().then((r) => r.length),
+  ]);
 
-  const rounds = await db.query.rounds.findMany();
   const draftRounds = rounds.filter((r) => r.drawStatus === "draft");
+  const firstRound = rounds[0];
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Overview"
-        description="Competition operations dashboard"
-        actions={<LinkButton href="/admin/draws">Manage draws</LinkButton>}
+        description={
+          competition
+            ? `${competition.name} · ${competition.season}`
+            : "Competition operations dashboard"
+        }
+        actions={
+          firstRound ? (
+            <LinkButton href={`/admin/rounds/${firstRound.id}/availability`}>
+              Open rounds
+            </LinkButton>
+          ) : (
+            <LinkButton href="/admin/settings">Configure competition</LinkButton>
+          )
+        }
       />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: "Competitions", value: competitionCount },
-          { label: "Institutions", value: institutionCount },
-          { label: "Teams", value: teamCount },
-          { label: "Rounds", value: roundCount },
-        ].map((stat) => (
-          <div key={stat.label} className="rounded-lg border p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {stat.label}
-            </p>
-            <p className="mt-2 text-3xl font-semibold tabular-nums">{stat.value}</p>
-          </div>
-        ))}
-      </div>
+      <SectionCards
+        cards={[
+          {
+            label: "Competition",
+            value: competition?.shortName ?? "—",
+            hint: competition?.status ?? "Not configured",
+          },
+          {
+            label: "Institutions",
+            value: institutionCount,
+            hint: "Participating schools",
+          },
+          {
+            label: "Teams",
+            value: teamCount,
+            hint: "Registered for this competition",
+          },
+          {
+            label: "Draft draws",
+            value: draftRounds.length,
+            badge: draftRounds.length > 0 ? "Needs review" : "Clear",
+            hint: `${rounds.length} rounds total`,
+          },
+        ]}
+      />
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold">Draft draws awaiting publication</h2>
-        <div className="rounded-lg border">
+        <h2 className="text-sm font-semibold">Rounds</h2>
+        <div className="border">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Round</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead>Draw status</TableHead>
+                <TableHead className="text-right">Open</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {draftRounds.length === 0 ? (
+              {rounds.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={3} className="text-muted-foreground">
-                    No draft draws
+                    No rounds yet — add them under Competition settings
                   </TableCell>
                 </TableRow>
               ) : (
-                draftRounds.map((r) => (
+                rounds.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>{r.name}</TableCell>
                     <TableCell>{r.drawStatus}</TableCell>
                     <TableCell className="text-right">
-                      <LinkButton href={`/admin/draws/${r.id}`} size="sm" variant="outline">
-                        Review
+                      <LinkButton
+                        href={`/admin/rounds/${r.id}/availability`}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Availability
                       </LinkButton>
                     </TableCell>
                   </TableRow>

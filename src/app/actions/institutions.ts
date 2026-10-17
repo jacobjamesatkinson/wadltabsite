@@ -64,6 +64,7 @@ export async function updateInstitution(
     details: data,
   });
   revalidatePath("/admin/institutions");
+  revalidatePath(`/admin/institutions/${id}`);
 }
 
 export async function archiveInstitution(id: string) {
@@ -82,6 +83,7 @@ export async function archiveInstitution(id: string) {
     entityId: id,
   });
   revalidatePath("/admin/institutions");
+  revalidatePath(`/admin/institutions/${id}`);
 }
 
 export async function deleteInstitution(id: string) {

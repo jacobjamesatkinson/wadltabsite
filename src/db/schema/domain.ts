@@ -39,8 +39,6 @@ export const postponementStatusEnum = pgEnum("postponement_status", [
   "rejected",
   "withdrawn",
 ]);
-export const levelEnum = pgEnum("competition_level", ["novice", "junior", "senior"]);
-
 export type CompetitionConfig = {
   format: "two_team";
   ranking: {
@@ -152,7 +150,6 @@ export const divisions = pgTable("divisions", {
     .notNull()
     .references(() => competitions.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  level: levelEnum("level").notNull(),
   venueId: text("venue_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -220,10 +217,9 @@ export const teams = pgTable(
     competitionId: text("competition_id")
       .notNull()
       .references(() => competitions.id, { onDelete: "cascade" }),
-    institutionId: text("institution_id")
-      .notNull()
-      .references(() => institutions.id),
+    institutionId: text("institution_id").references(() => institutions.id),
     divisionId: text("division_id").references(() => divisions.id),
+    /** When bound to an institution: team number only (e.g. "1"). Otherwise freeform name. */
     name: text("name").notNull(),
     identifier: text("identifier").notNull(),
     status: text("status").notNull().default("active"),
@@ -354,6 +350,38 @@ export const adjudicatorAvailability = pgTable(
   (t) => [uniqueIndex("adj_availability_unique").on(t.adjudicatorId, t.timeslotId)]
 );
 
+/** Round-level team availability — unavailable teams are excluded from draws. */
+export const teamAvailability = pgTable(
+  "team_availability",
+  {
+    id: text("id").primaryKey(),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    roundId: text("round_id")
+      .notNull()
+      .references(() => rounds.id, { onDelete: "cascade" }),
+    available: boolean("available").notNull().default(true),
+  },
+  (t) => [uniqueIndex("team_availability_unique").on(t.teamId, t.roundId)]
+);
+
+/** Round-level room availability. */
+export const roomAvailability = pgTable(
+  "room_availability",
+  {
+    id: text("id").primaryKey(),
+    roomId: text("room_id")
+      .notNull()
+      .references(() => rooms.id, { onDelete: "cascade" }),
+    roundId: text("round_id")
+      .notNull()
+      .references(() => rounds.id, { onDelete: "cascade" }),
+    available: boolean("available").notNull().default(true),
+  },
+  (t) => [uniqueIndex("room_availability_unique").on(t.roomId, t.roundId)]
+);
+
 export const adjudicatorAssignments = pgTable(
   "adjudicator_assignments",
   {
@@ -399,6 +427,8 @@ export const teamAccessTokens = pgTable("team_access_tokens", {
     .references(() => teams.id, { onDelete: "cascade" }),
   tokenHash: text("token_hash").notNull().unique(),
   tokenPrefix: text("token_prefix").notNull(),
+  /** Raw URL segment so admins can re-copy the link without regenerating. */
+  accessToken: text("access_token").unique(),
   canEditSpeakers: boolean("can_edit_speakers").notNull().default(false),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdBy: text("created_by").references(() => user.id),

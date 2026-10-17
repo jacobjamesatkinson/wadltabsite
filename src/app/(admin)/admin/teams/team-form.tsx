@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createTeam, updateTeam } from "@/app/actions/teams";
+import { formatTeamDisplayName } from "@/lib/teams/display-name";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,12 +18,12 @@ import { Label } from "@/components/ui/label";
 
 type TeamFormProps = {
   competitions: Array<{ id: string; name: string }>;
-  institutions: Array<{ id: string; name: string }>;
+  institutions: Array<{ id: string; name: string; shortName: string }>;
   divisions: Array<{ id: string; name: string; competitionId: string }>;
   team?: {
     id: string;
     competitionId: string;
-    institutionId: string;
+    institutionId: string | null;
     divisionId: string | null;
     name: string;
     identifier: string;
@@ -36,9 +37,7 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
   const [competitionId, setCompetitionId] = useState(
     team?.competitionId ?? competitions[0]?.id ?? ""
   );
-  const [institutionId, setInstitutionId] = useState(
-    team?.institutionId ?? institutions[0]?.id ?? ""
-  );
+  const [institutionId, setInstitutionId] = useState(team?.institutionId ?? "");
   const [divisionId, setDivisionId] = useState(team?.divisionId ?? "");
   const [name, setName] = useState(team?.name ?? "");
   const [identifier, setIdentifier] = useState(team?.identifier ?? "");
@@ -51,6 +50,13 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
     [divisions, competitionId]
   );
 
+  const selectedInstitution = institutions.find((i) => i.id === institutionId);
+  const bound = Boolean(institutionId);
+  const preview = formatTeamDisplayName(
+    { name: name || "?", institutionId: institutionId || null },
+    selectedInstitution
+  );
+
   return (
     <Dialog
       open={open}
@@ -58,7 +64,7 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
         setOpen(next);
         if (next && team) {
           setCompetitionId(team.competitionId);
-          setInstitutionId(team.institutionId);
+          setInstitutionId(team.institutionId ?? "");
           setDivisionId(team.divisionId ?? "");
           setName(team.name);
           setIdentifier(team.identifier);
@@ -85,11 +91,11 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
             try {
               const payload = {
                 competitionId,
-                institutionId,
+                institutionId: institutionId || null,
                 divisionId: divisionId || null,
                 name,
-                identifier,
-                status,
+                identifier: bound ? undefined : identifier,
+                status: editing ? status : undefined,
               };
               if (team) {
                 await updateTeam(team.id, payload);
@@ -107,20 +113,22 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
             }
           }}
         >
-          <div className="space-y-1">
-            <Label>Competition</Label>
-            <select
-              className="flex h-8 w-full rounded-lg border px-2 text-sm"
-              value={competitionId}
-              onChange={(e) => setCompetitionId(e.target.value)}
-            >
-              {competitions.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {competitions.length > 1 ? (
+            <div className="space-y-1">
+              <Label>Competition</Label>
+              <select
+                className="flex h-8 w-full rounded-lg border px-2 text-sm"
+                value={competitionId}
+                onChange={(e) => setCompetitionId(e.target.value)}
+              >
+                {competitions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div className="space-y-1">
             <Label>Institution</Label>
             <select
@@ -128,9 +136,10 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
               value={institutionId}
               onChange={(e) => setInstitutionId(e.target.value)}
             >
+              <option value="">None (independent team)</option>
               {institutions.map((i) => (
                 <option key={i.id} value={i.id}>
-                  {i.name}
+                  {i.name} ({i.shortName})
                 </option>
               ))}
             </select>
@@ -150,18 +159,41 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
               ))}
             </select>
           </div>
-          <div className="space-y-1">
-            <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required />
-          </div>
-          <div className="space-y-1">
-            <Label>Identifier</Label>
-            <Input
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-            />
-          </div>
+          {bound ? (
+            <div className="space-y-1">
+              <Label>Team number</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value.replace(/[^\d]/g, ""))}
+                inputMode="numeric"
+                placeholder="1"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Shown as <span className="font-medium text-foreground">{preview}</span> in
+                draws
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1">
+                <Label>Name</Label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Identifier</Label>
+                <Input
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  required
+                />
+              </div>
+            </>
+          )}
           {editing ? (
             <div className="space-y-1">
               <Label>Status</Label>

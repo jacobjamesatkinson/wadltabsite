@@ -1,0 +1,5 @@
+﻿onlyBuiltDependencies:
+  - esbuild
+  - unrs-resolver
+minimumReleaseAgeExclude:
+  - zod@4.6.6

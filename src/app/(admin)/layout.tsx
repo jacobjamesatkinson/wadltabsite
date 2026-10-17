@@ -1,9 +1,7 @@
-import { AppShell } from "@/components/layout/app-shell";
-import { adminNav } from "@/components/nav/nav-config";
 import { requirePerm } from "@/lib/auth/session";
-
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
+import { adminSetupNav, adminSettingsNav } from "@/components/nav/nav-config";
+import { AppShell } from "@/components/layout/app-shell";
+import { getSiteRounds } from "@/lib/competition";
 
 export default async function AdminLayout({
   children,
@@ -11,8 +9,16 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   const ctx = await requirePerm("admin:manage");
+  const rounds = await getSiteRounds();
+
   return (
-    <AppShell ctx={ctx} items={adminNav} title="Administrator">
+    <AppShell
+      ctx={ctx}
+      items={adminSetupNav}
+      rounds={rounds}
+      settingsItems={adminSettingsNav}
+      title="Administrator"
+    >
       {children}
     </AppShell>
   );

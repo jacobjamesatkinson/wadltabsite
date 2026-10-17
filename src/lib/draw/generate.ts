@@ -242,7 +242,9 @@ export function generateDraw(input: DrawGenerationInput): DrawGenerationResult {
       timeslotId: timeslot?.id ?? null,
       isPullUp: pair.pullUp,
       isRematch: haveMet(affirmative.id, negative.id, input.priorMatches),
-      isSameInstitution: affirmative.institutionId === negative.institutionId,
+      isSameInstitution:
+        Boolean(affirmative.institutionId) &&
+        affirmative.institutionId === negative.institutionId,
     });
   }
 

@@ -1,0 +1,2 @@
+ALTER TABLE "team_access_tokens" ADD COLUMN "access_token" text;--> statement-breakpoint
+ALTER TABLE "team_access_tokens" ADD CONSTRAINT "team_access_tokens_access_token_unique" UNIQUE("access_token");

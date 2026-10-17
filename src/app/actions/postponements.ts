@@ -35,12 +35,16 @@ export async function requestPostponement(debateId: string, reason: string) {
   const own = teamRows.find((t) => canAccessInstitution(ctx, t.institutionId));
   if (!own && !hasPermission(ctx, "admin:manage")) throw new Error("FORBIDDEN");
 
+  const institutionId =
+    own?.institutionId ?? teamRows.find((t) => t.institutionId)?.institutionId;
+  if (!institutionId) throw new Error("Team has no institution for postponement");
+
   const id = createId("pp");
   await db.insert(postponementRequests).values({
     id,
     debateId: data.debateId,
     requestedBy: ctx.userId,
-    institutionId: own?.institutionId ?? teamRows[0]!.institutionId,
+    institutionId,
     reason: data.reason,
     status: "pending",
   });

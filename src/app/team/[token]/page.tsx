@@ -10,6 +10,7 @@ import {
   teamAccessTokens,
 } from "@/db/schema";
 import { hashToken } from "@/lib/tokens";
+import { formatTeamDisplayName } from "@/lib/teams/display-name";
 import { PageHeader } from "@/components/page-header";
 import {
   Table,
@@ -42,6 +43,12 @@ export default async function TeamPortalPage({
   });
   if (!team) notFound();
 
+  const institution = team.institutionId
+    ? await db.query.institutions.findFirst({
+        where: (t, { eq: e }) => e(t.id, team.institutionId!),
+      })
+    : null;
+
   const speakerRows = await db
     .select()
     .from(speakers)
@@ -66,7 +73,7 @@ export default async function TeamPortalPage({
   return (
     <main className="mx-auto min-h-screen max-w-3xl space-y-6 px-4 py-8">
       <PageHeader
-        title={team.name}
+        title={formatTeamDisplayName(team, institution)}
         description={`Private team portal · ${team.wins}–${team.losses}`}
       />
 

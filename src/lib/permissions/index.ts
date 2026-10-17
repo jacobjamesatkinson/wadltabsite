@@ -76,7 +76,11 @@ export function institutionIdsFor(ctx: AuthContext): string[] {
   return [...ids];
 }
 
-export function canAccessInstitution(ctx: AuthContext, institutionId: string): boolean {
+export function canAccessInstitution(
+  ctx: AuthContext,
+  institutionId: string | null | undefined
+): boolean {
+  if (!institutionId) return false;
   if (hasPermission(ctx, "institutions:manage")) return true;
   return institutionIdsFor(ctx).includes(institutionId);
 }

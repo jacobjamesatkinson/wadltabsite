@@ -1,19 +1,11 @@
 import { db } from "@/db";
-import { deleteAccount, deleteInvitation } from "@/app/actions/accounts";
+import { deleteInvitation } from "@/app/actions/accounts";
 import { DeleteButton } from "@/components/delete-button";
 import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { CreateAccountForm, ManageAccountButton } from "./account-forms";
-import { InviteForm } from "./invite-form";
 import type { AppRole } from "@/lib/permissions/types";
+import { CreateAccountForm } from "./account-forms";
+import { AccountsTable } from "./accounts-table";
+import { InviteForm } from "./invite-form";
 
 export default async function AccountsPage() {
   const [users, roles, invites, institutions] = await Promise.all([
@@ -36,6 +28,34 @@ export default async function AccountsPage() {
     shortName: i.shortName,
   }));
   const institutionName = new Map(institutions.map((i) => [i.id, i.shortName]));
+
+  const rows = users.map((u) => {
+    const userRoles = rolesByUser.get(u.id) ?? [];
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      status: u.status,
+      rolesLabel:
+        userRoles.length === 0
+          ? "none"
+          : userRoles
+              .map(
+                (r) =>
+                  `${r.role}${
+                    r.institutionId
+                      ? `:${institutionName.get(r.institutionId) ?? "?"}`
+                      : ""
+                  }`
+              )
+              .join(", "),
+      roles: userRoles.map((r) => ({
+        id: r.id,
+        role: r.role as AppRole,
+        institutionId: r.institutionId,
+      })),
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -70,67 +90,7 @@ export default async function AccountsPage() {
             ))}
         </ul>
       </section>
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Roles</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map((u) => {
-              const userRoles = rolesByUser.get(u.id) ?? [];
-              return (
-                <TableRow key={u.id}>
-                  <TableCell>{u.name}</TableCell>
-                  <TableCell>{u.email}</TableCell>
-                  <TableCell>
-                    <Badge variant={u.status === "active" ? "default" : "secondary"}>
-                      {u.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="space-x-1">
-                    {userRoles.length === 0 ? (
-                      <Badge variant="outline">none</Badge>
-                    ) : (
-                      userRoles.map((role) => (
-                        <Badge key={role.id} variant="outline">
-                          {role.role}
-                          {role.institutionId
-                            ? `:${institutionName.get(role.institutionId) ?? "?"}`
-                            : ""}
-                        </Badge>
-                      ))
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <ManageAccountButton
-                        accountUser={u}
-                        roles={userRoles.map((r) => ({
-                          id: r.id,
-                          role: r.role as AppRole,
-                          institutionId: r.institutionId,
-                        }))}
-                        institutions={institutionOpts}
-                      />
-                      <DeleteButton
-                        confirmTitle={`Delete ${u.name}?`}
-                        confirmDescription="This permanently removes the account and related roles."
-                        onDelete={deleteAccount.bind(null, u.id)}
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
+      <AccountsTable rows={rows} institutions={institutionOpts} />
     </div>
   );
 }

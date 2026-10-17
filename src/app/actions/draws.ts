@@ -7,8 +7,11 @@ import {
   byes,
   debates,
   drawVersions,
+  institutions,
+  roomAvailability,
   rooms,
   rounds,
+  teamAvailability,
   teams,
   timeslots,
 } from "@/db/schema";
@@ -17,6 +20,7 @@ import { getAuthContext } from "@/lib/auth/session";
 import { generateDraw } from "@/lib/draw";
 import { createId } from "@/lib/id";
 import { requirePermission } from "@/lib/permissions";
+import { formatTeamDisplayName } from "@/lib/teams/display-name";
 
 export async function generateRoundDraw(params: {
   roundId: string;
@@ -49,7 +53,27 @@ export async function generateRoundDraw(params: {
     .from(teams)
     .where(and(eq(teams.competitionId, competition.id), eq(teams.status, "active")));
 
+  const teamAvailRows = await db
+    .select()
+    .from(teamAvailability)
+    .where(eq(teamAvailability.roundId, round.id));
+  const unavailableTeams = new Set(
+    teamAvailRows.filter((r) => !r.available).map((r) => r.teamId)
+  );
+  const availableTeams = allTeams.filter((t) => !unavailableTeams.has(t.id));
+
   const allRooms = await db.select().from(rooms);
+  const roomAvailRows = await db
+    .select()
+    .from(roomAvailability)
+    .where(eq(roomAvailability.roundId, round.id));
+  const unavailableRooms = new Set(
+    roomAvailRows.filter((r) => !r.available).map((r) => r.roomId)
+  );
+  const availableRooms = allRooms.filter(
+    (r) => r.available && !unavailableRooms.has(r.id)
+  );
+
   const slots = await db
     .select()
     .from(timeslots)
@@ -76,10 +100,16 @@ export async function generateRoundDraw(params: {
           .where(inArray(debates.roundId, priorRoundIds))
       : [];
 
+  const institutionRows = await db.select().from(institutions);
+  const institutionMap = new Map(institutionRows.map((i) => [i.id, i]));
+
   const result = generateDraw({
-    teams: allTeams.map((t) => ({
+    teams: availableTeams.map((t) => ({
       id: t.id,
-      name: t.name,
+      name: formatTeamDisplayName(
+        t,
+        t.institutionId ? institutionMap.get(t.institutionId) : null
+      ),
       institutionId: t.institutionId,
       divisionId: t.divisionId,
       wins: t.wins,
@@ -87,7 +117,7 @@ export async function generateRoundDraw(params: {
       byes: t.byes,
       speakerPoints: t.speakerPoints,
     })),
-    rooms: allRooms.map((r) => ({
+    rooms: availableRooms.map((r) => ({
       id: r.id,
       venueId: r.venueId,
       identifier: r.identifier,
@@ -187,6 +217,8 @@ export async function generateRoundDraw(params: {
 
   revalidatePath("/admin/draws");
   revalidatePath(`/admin/draws/${round.id}`);
+  revalidatePath(`/admin/rounds/${round.id}/draw`);
+  revalidatePath(`/admin/rounds/${round.id}/display`);
   return {
     versionId,
     hardViolations: result.hardViolations,
@@ -266,6 +298,9 @@ export async function publishRoundDraw(roundId: string) {
 
   revalidatePath("/admin/draws");
   revalidatePath(`/admin/draws/${roundId}`);
+  revalidatePath(`/admin/rounds/${roundId}/draw`);
+  revalidatePath(`/admin/rounds/${roundId}/display`);
+  revalidatePath(`/admin/rounds/${roundId}/results`);
   revalidatePath("/public/draw");
   revalidatePath("/coordinator/draw");
 }
@@ -361,17 +396,23 @@ export async function updateDebateAssignment(params: {
 
   let affName = debate.affirmativeTeamName;
   let negName = debate.negativeTeamName;
-  if (params.affirmativeTeamId) {
+  async function displayNameFor(teamId: string) {
     const t = await db.query.teams.findFirst({
-      where: (x, { eq: e }) => e(x.id, params.affirmativeTeamId!),
+      where: (x, { eq: e }) => e(x.id, teamId),
     });
-    affName = t?.name ?? affName;
+    if (!t) return null;
+    const inst = t.institutionId
+      ? await db.query.institutions.findFirst({
+          where: (x, { eq: e }) => e(x.id, t.institutionId!),
+        })
+      : null;
+    return formatTeamDisplayName(t, inst);
+  }
+  if (params.affirmativeTeamId) {
+    affName = (await displayNameFor(params.affirmativeTeamId)) ?? affName;
   }
   if (params.negativeTeamId) {
-    const t = await db.query.teams.findFirst({
-      where: (x, { eq: e }) => e(x.id, params.negativeTeamId!),
-    });
-    negName = t?.name ?? negName;
+    negName = (await displayNameFor(params.negativeTeamId)) ?? negName;
   }
 
   await db

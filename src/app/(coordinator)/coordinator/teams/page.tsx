@@ -1,6 +1,6 @@
 import { inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { speakers, teams } from "@/db/schema";
+import { institutions, speakers, teams } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
 import {
   Table,
@@ -12,15 +12,21 @@ import {
 } from "@/components/ui/table";
 import { requireAuth } from "@/lib/auth/session";
 import { institutionIdsFor } from "@/lib/permissions";
+import { formatTeamDisplayName } from "@/lib/teams/display-name";
 import { SpeakerEditor } from "./speaker-editor";
 
 export default async function CoordinatorTeamsPage() {
   const ctx = await requireAuth();
   const ids = institutionIdsFor(ctx);
-  const teamRows =
+  const [teamRows, institutionRows] = await Promise.all([
     ids.length > 0
-      ? await db.select().from(teams).where(inArray(teams.institutionId, ids))
-      : [];
+      ? db.select().from(teams).where(inArray(teams.institutionId, ids))
+      : Promise.resolve([]),
+    ids.length > 0
+      ? db.select().from(institutions).where(inArray(institutions.id, ids))
+      : Promise.resolve([]),
+  ]);
+  const instMap = new Map(institutionRows.map((i) => [i.id, i]));
   const teamIds = teamRows.map((t) => t.id);
   const speakerRows =
     teamIds.length > 0
@@ -38,7 +44,12 @@ export default async function CoordinatorTeamsPage() {
           <section key={t.id} className="space-y-3 rounded-lg border p-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="font-semibold">{t.name}</h2>
+                <h2 className="font-semibold">
+                  {formatTeamDisplayName(
+                    t,
+                    t.institutionId ? instMap.get(t.institutionId) : null
+                  )}
+                </h2>
                 <p className="text-sm text-muted-foreground">
                   {t.identifier} · {t.wins}–{t.losses}
                 </p>

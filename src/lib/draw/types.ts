@@ -3,7 +3,7 @@ import type { CompetitionConfig } from "@/db/schema";
 export type DrawTeam = {
   id: string;
   name: string;
-  institutionId: string;
+  institutionId: string | null;
   divisionId: string | null;
   wins: number;
   losses: number;

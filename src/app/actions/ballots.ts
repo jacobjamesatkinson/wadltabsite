@@ -76,6 +76,7 @@ export async function submitBallot(input: z.infer<typeof submitSchema>) {
 
   revalidatePath("/adjudicator/ballots");
   revalidatePath("/admin/results");
+  revalidatePath(`/admin/rounds/${debate.roundId}/results`);
   revalidatePath("/ha/ballots");
   return { id, needsReview };
 }

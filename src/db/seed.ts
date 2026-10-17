@@ -32,7 +32,30 @@ async function upsertUser(params: {
   const existing = await db.query.user.findFirst({
     where: (t, { eq: e }) => e(t.email, params.email),
   });
-  if (existing) return existing;
+  const hashed = await hashPassword(params.password);
+
+  if (existing) {
+    // Keep credentials in sync with .env on every seed
+    const existingAccount = await db.query.account.findFirst({
+      where: (t, { and, eq: e }) =>
+        and(e(t.userId, existing.id), e(t.providerId, "credential")),
+    });
+    if (existingAccount) {
+      await db
+        .update(account)
+        .set({ password: hashed, updatedAt: new Date() })
+        .where(eq(account.id, existingAccount.id));
+    } else {
+      await db.insert(account).values({
+        id: createId("acc"),
+        accountId: existing.id,
+        providerId: "credential",
+        userId: existing.id,
+        password: hashed,
+      });
+    }
+    return existing;
+  }
 
   const id = createId("usr");
   await db.insert(user).values({
@@ -42,7 +65,6 @@ async function upsertUser(params: {
     emailVerified: true,
     status: "active",
   });
-  const hashed = await hashPassword(params.password);
   await db.insert(account).values({
     id: createId("acc"),
     accountId: id,
@@ -197,21 +219,18 @@ async function seed() {
         id: divNovice,
         competitionId,
         name: "Novice A",
-        level: "novice",
         venueId,
       },
       {
         id: divJunior,
         competitionId,
         name: "Junior A",
-        level: "junior",
         venueId,
       },
       {
         id: divSenior,
         competitionId,
         name: "Senior A",
-        level: "senior",
         venueId,
       },
     ]);
@@ -250,16 +269,18 @@ async function seed() {
     ]);
 
     const teamDefs = [
-      { name: "Perth 1", identifier: "PERTH-1", inst: institutionA.id, div: divJunior, wins: 0 },
-      { name: "Perth 2", identifier: "PERTH-2", inst: institutionA.id, div: divJunior, wins: 0 },
-      { name: "Fremantle 1", identifier: "FREM-1", inst: institutionB.id, div: divJunior, wins: 0 },
-      { name: "Fremantle 2", identifier: "FREM-2", inst: institutionB.id, div: divJunior, wins: 0 },
-      { name: "Perth Senior 1", identifier: "PERTH-S1", inst: institutionA.id, div: divSenior, wins: 0 },
-      { name: "Fremantle Senior 1", identifier: "FREM-S1", inst: institutionB.id, div: divSenior, wins: 0 },
+      { name: "1", identifier: "PERTH-1", inst: institutionA.id, div: divJunior, wins: 0 },
+      { name: "2", identifier: "PERTH-2", inst: institutionA.id, div: divJunior, wins: 0 },
+      { name: "1", identifier: "FREM-1", inst: institutionB.id, div: divJunior, wins: 0 },
+      { name: "2", identifier: "FREM-2", inst: institutionB.id, div: divJunior, wins: 0 },
+      { name: "3", identifier: "PERTH-3", inst: institutionA.id, div: divSenior, wins: 0 },
+      { name: "3", identifier: "FREM-3", inst: institutionB.id, div: divSenior, wins: 0 },
     ];
 
     for (const t of teamDefs) {
       const teamId = createId("team");
+      const instShort =
+        t.inst === institutionA.id ? institutionA.shortName : institutionB.shortName;
       await db.insert(teams).values({
         id: teamId,
         competitionId,
@@ -270,9 +291,9 @@ async function seed() {
         wins: t.wins,
       });
       await db.insert(speakers).values([
-        { id: createId("spk"), teamId, name: `${t.name} Speaker A` },
-        { id: createId("spk"), teamId, name: `${t.name} Speaker B` },
-        { id: createId("spk"), teamId, name: `${t.name} Speaker C` },
+        { id: createId("spk"), teamId, name: `${instShort} ${t.name} Speaker A` },
+        { id: createId("spk"), teamId, name: `${instShort} ${t.name} Speaker B` },
+        { id: createId("spk"), teamId, name: `${instShort} ${t.name} Speaker C` },
       ]);
     }
 

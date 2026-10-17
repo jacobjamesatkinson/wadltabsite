@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   generateRoundDraw,
-  publishRoundDraw,
   revisePublishedDraw,
 } from "@/app/actions/draws";
 import { autoAllocateRound } from "@/app/actions/adjudicators";
@@ -14,11 +13,10 @@ import { Button } from "@/components/ui/button";
 export function DrawActions({
   roundId,
   drawStatus,
-  hasHard,
 }: {
   roundId: string;
   drawStatus: string;
-  hasHard: boolean;
+  hasHard?: boolean;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
@@ -58,17 +56,9 @@ export function DrawActions({
           disabled={!!loading}
           onClick={() => run("Generate", () => generateRoundDraw({ roundId }))}
         >
-          {loading === "Generate" ? "Generating…" : "Generate draft"}
+          {loading === "Generate" ? "Generating…" : "Generate draw"}
         </Button>
       )}
-      <Button
-        size="sm"
-        variant="secondary"
-        disabled={!!loading || drawStatus === "none" || hasHard}
-        onClick={() => run("Publish", () => publishRoundDraw(roundId))}
-      >
-        {loading === "Publish" ? "Publishing…" : "Publish"}
-      </Button>
       <Button
         size="sm"
         variant="outline"

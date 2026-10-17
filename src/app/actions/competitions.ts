@@ -37,13 +37,11 @@ export async function createCompetition(input: z.infer<typeof createSchema>) {
     config: defaultCompetitionConfig,
   });
 
-  // Default divisions for WADL levels
-  for (const level of ["novice", "junior", "senior"] as const) {
+  for (const name of ["Novice A", "Junior A", "Senior A"]) {
     await db.insert(divisions).values({
       id: createId("div"),
       competitionId: id,
-      name: `${level[0]!.toUpperCase()}${level.slice(1)} A`,
-      level,
+      name,
     });
   }
 
@@ -131,7 +129,9 @@ export async function addRound(competitionId: string, name: string, number: numb
     details: { competitionId, name, number },
   });
   revalidatePath(`/admin/competitions/${competitionId}`);
+  revalidatePath("/admin/settings/rounds");
   revalidatePath("/admin/draws");
+  revalidatePath("/admin");
   return { id };
 }
 
@@ -197,7 +197,127 @@ export async function deleteRound(roundId: string) {
     details: { competitionId: round.competitionId },
   });
   revalidatePath(`/admin/competitions/${round.competitionId}`);
+  revalidatePath("/admin/settings/rounds");
   revalidatePath("/admin/draws");
+  revalidatePath("/admin");
+}
+
+export async function updateRound(
+  roundId: string,
+  input: { name: string; number: number; date?: string | null }
+) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "competitions:manage");
+  const round = await db.query.rounds.findFirst({
+    where: (t, { eq: e }) => e(t.id, roundId),
+  });
+  if (!round) throw new Error("NOT_FOUND");
+
+  await db
+    .update(rounds)
+    .set({
+      name: input.name,
+      number: input.number,
+      date: input.date ? new Date(input.date) : round.date,
+    })
+    .where(eq(rounds.id, roundId));
+
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "round.update",
+    entityType: "round",
+    entityId: roundId,
+    details: input,
+  });
+  revalidatePath("/admin/settings/rounds");
+  revalidatePath(`/admin/rounds/${roundId}/availability`);
+  revalidatePath("/admin");
+}
+
+export async function createDivision(input: {
+  competitionId: string;
+  name: string;
+}) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "competitions:manage");
+
+  const id = createId("div");
+  await db.insert(divisions).values({
+    id,
+    competitionId: input.competitionId,
+    name: input.name.trim(),
+  });
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "division.create",
+    entityType: "division",
+    entityId: id,
+    details: input,
+  });
+  revalidatePath("/admin/settings/divisions");
+  revalidatePath("/");
+  return { id };
+}
+
+export async function updateDivision(
+  divisionId: string,
+  input: { name: string }
+) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "competitions:manage");
+
+  const division = await db.query.divisions.findFirst({
+    where: (t, { eq: e }) => e(t.id, divisionId),
+  });
+  if (!division) throw new Error("NOT_FOUND");
+
+  const name = input.name.trim();
+  if (!name) throw new Error("Division name required");
+
+  await db
+    .update(divisions)
+    .set({ name })
+    .where(eq(divisions.id, divisionId));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "division.update",
+    entityType: "division",
+    entityId: divisionId,
+    details: { name },
+  });
+  revalidatePath("/admin/settings/divisions");
+  revalidatePath("/");
+}
+
+export async function deleteDivision(divisionId: string) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "competitions:manage");
+
+  const division = await db.query.divisions.findFirst({
+    where: (t, { eq: e }) => e(t.id, divisionId),
+  });
+  if (!division) throw new Error("NOT_FOUND");
+
+  const linkedTeam = await db.query.teams.findFirst({
+    where: (t, { eq: e }) => e(t.divisionId, divisionId),
+  });
+  if (linkedTeam) {
+    throw new Error("Cannot delete a division that still has teams");
+  }
+
+  await db.delete(divisions).where(eq(divisions.id, divisionId));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "division.delete",
+    entityType: "division",
+    entityId: divisionId,
+  });
+  revalidatePath("/admin/settings/divisions");
+  revalidatePath("/");
 }
 
 export async function updateCompetitionConfig(

@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { PageHeader } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
+import { SectionCards } from "@/components/section-cards";
 
 export default async function HaOverviewPage() {
   const [venues, debates, ballots] = await Promise.all([
@@ -21,20 +22,17 @@ export default async function HaOverviewPage() {
           </LinkButton>
         }
       />
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-lg border p-4">
-          <p className="text-xs uppercase text-muted-foreground">Venues</p>
-          <p className="mt-2 text-3xl font-semibold">{venues.length}</p>
-        </div>
-        <div className="rounded-lg border p-4">
-          <p className="text-xs uppercase text-muted-foreground">Debates</p>
-          <p className="mt-2 text-3xl font-semibold">{debates.length}</p>
-        </div>
-        <div className="rounded-lg border p-4">
-          <p className="text-xs uppercase text-muted-foreground">Ballots to review</p>
-          <p className="mt-2 text-3xl font-semibold">{pending.length}</p>
-        </div>
-      </div>
+      <SectionCards
+        cards={[
+          { label: "Venues", value: venues.length, hint: "In your scope" },
+          { label: "Debates", value: debates.length, hint: "Scheduled and completed" },
+          {
+            label: "Ballots to review",
+            value: pending.length,
+            badge: pending.length > 0 ? "Action needed" : "Clear",
+          },
+        ]}
+      />
     </div>
   );
 }
