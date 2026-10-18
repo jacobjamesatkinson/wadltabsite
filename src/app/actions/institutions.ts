@@ -25,7 +25,7 @@ export async function createInstitution(input: z.infer<typeof schema>) {
   await db.insert(institutions).values({
     id,
     name: data.name,
-    shortName: data.shortName.toUpperCase(),
+    shortName: data.shortName.trim(),
   });
   await writeAudit({
     actorId: ctx.userId,
@@ -51,7 +51,7 @@ export async function updateInstitution(
     .update(institutions)
     .set({
       name: data.name,
-      shortName: data.shortName.toUpperCase(),
+      shortName: data.shortName.trim(),
       status: data.status ?? "active",
       updatedAt: new Date(),
     })
@@ -106,4 +106,40 @@ export async function deleteInstitution(id: string) {
     entityId: id,
   });
   revalidatePath("/admin/institutions");
+}
+
+export async function deleteInstitutions(ids: string[]) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "institutions:manage");
+
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return { deleted: 0 };
+
+  for (const id of unique) {
+    const linkedTeams = await db.query.teams.findFirst({
+      where: (t, { eq: e }) => e(t.institutionId, id),
+    });
+    if (linkedTeams) {
+      const inst = await db.query.institutions.findFirst({
+        where: (t, { eq: e }) => e(t.id, id),
+      });
+      throw new Error(
+        `Cannot delete ${inst?.shortName ?? id} — it still has teams`
+      );
+    }
+  }
+
+  for (const id of unique) {
+    await db.delete(institutions).where(eq(institutions.id, id));
+    await writeAudit({
+      actorId: ctx.userId,
+      action: "institution.delete",
+      entityType: "institution",
+      entityId: id,
+      details: { via: "bulk" },
+    });
+  }
+  revalidatePath("/admin/institutions");
+  return { deleted: unique.length };
 }

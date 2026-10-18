@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Check, MapPin, Users, X } from "lucide-react";
+import { Check, Clock, MapPin, Minus, Users } from "lucide-react";
 import { DataTable } from "@/components/data-table/data-table";
 import { DataTableAdvancedToolbar } from "@/components/data-table/data-table-advanced-toolbar";
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header";
@@ -15,17 +15,29 @@ import { cn } from "@/lib/utils";
 
 export type ResultsRow = {
   id: string;
-  status: string;
-  ballotLabel: string;
+  roundId: string;
+  status: "none" | "unconfirmed" | "confirmed";
+  version: number | null;
+  versions: number;
   enteredBy: string;
   enteredAt: string;
+  confirmedBy: string | null;
+  venue: string;
+  timeslot: string;
   room: string;
   affirmative: string;
   negative: string;
+  incomplete: boolean;
   winnerSide: "aff" | "neg" | "none";
   adjudicators: string;
   score: string;
-  reviewBallotId: string | null;
+  ballotId: string | null;
+};
+
+const STATUS_LABEL: Record<ResultsRow["status"], string> = {
+  none: "No ballot",
+  unconfirmed: "Unconfirmed",
+  confirmed: "Confirmed",
 };
 
 export function ResultsDataTable({ data }: { data: ResultsRow[] }) {
@@ -34,85 +46,69 @@ export function ResultsDataTable({ data }: { data: ResultsRow[] }) {
       {
         id: "status",
         accessorKey: "status",
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} label="Status" />
-        ),
+        header: ({ column }) => <DataTableColumnHeader column={column} label="Status" />,
         cell: ({ row }) => {
-          const ok =
-            row.original.status === "accepted" ||
-            row.original.status === "submitted";
+          const s = row.original.status;
           return (
-            <span className="inline-flex items-center gap-1">
-              {ok ? (
+            <span className="inline-flex items-center gap-1.5 text-xs">
+              {s === "confirmed" ? (
                 <Check className="size-4 text-emerald-600" />
+              ) : s === "unconfirmed" ? (
+                <Clock className="size-4 text-amber-600" />
               ) : (
-                <X className="size-4 text-muted-foreground" />
+                <Minus className="size-4 text-muted-foreground" />
               )}
-              <span className="text-xs capitalize">{row.original.status}</span>
+              <span className={cn(s === "none" && "text-muted-foreground")}>{STATUS_LABEL[s]}</span>
+              {row.original.version ? (
+                <span className="text-muted-foreground">v{row.original.version}</span>
+              ) : null}
             </span>
           );
         },
-        meta: { label: "Status", variant: "select", options: [
-          { label: "Pending", value: "pending" },
-          { label: "Submitted", value: "submitted" },
-          { label: "Accepted", value: "accepted" },
-          { label: "Disputed", value: "disputed" },
-        ] },
+        meta: {
+          label: "Status",
+          variant: "select",
+          options: [
+            { label: "No ballot", value: "none" },
+            { label: "Unconfirmed", value: "unconfirmed" },
+            { label: "Confirmed", value: "confirmed" },
+          ],
+        },
         enableColumnFilter: true,
       },
       {
-        id: "ballotLabel",
-        accessorKey: "ballotLabel",
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} label="Ballot" />
-        ),
+        id: "venue",
+        accessorKey: "venue",
+        header: ({ column }) => <DataTableColumnHeader column={column} label="Venue" />,
         cell: ({ row }) => (
-          <div className="space-y-0.5">
-            <div className="text-sm font-medium text-violet-700">
-              {row.original.ballotLabel}
-            </div>
-            {row.original.enteredBy !== "—" ? (
-              <div className="text-xs text-teal-700">
-                {row.original.enteredAt} · {row.original.enteredBy}
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground">No ballot yet</div>
-            )}
+          <div className="text-sm">
+            {row.original.venue}
+            <div className="text-xs text-muted-foreground">{row.original.timeslot}</div>
           </div>
         ),
-        meta: { label: "Ballot", variant: "text" },
+        meta: { label: "Venue", variant: "text", icon: MapPin },
         enableColumnFilter: true,
       },
       {
         id: "room",
         accessorKey: "room",
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} label="Room" />
-        ),
-        cell: ({ row }) => (
-          <span className="inline-flex items-center gap-1 text-sm">
-            <MapPin className="size-3.5 text-muted-foreground" />
-            {row.original.room}
-          </span>
-        ),
-        meta: { label: "Room", variant: "text", icon: MapPin },
+        header: ({ column }) => <DataTableColumnHeader column={column} label="Room" />,
+        meta: { label: "Room", variant: "text" },
         enableColumnFilter: true,
       },
       {
         id: "affirmative",
         accessorKey: "affirmative",
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} label="Aff" />
-        ),
+        header: ({ column }) => <DataTableColumnHeader column={column} label="Aff" />,
         cell: ({ row }) => (
           <span
             className={cn(
               "text-sm",
+              row.original.incomplete && "text-destructive",
               row.original.winnerSide === "aff" && "font-semibold text-emerald-700",
               row.original.winnerSide === "neg" && "text-muted-foreground"
             )}
           >
-            {row.original.winnerSide === "aff" ? "▲ " : row.original.winnerSide === "neg" ? "▼ " : ""}
             {row.original.affirmative}
           </span>
         ),
@@ -122,18 +118,16 @@ export function ResultsDataTable({ data }: { data: ResultsRow[] }) {
       {
         id: "negative",
         accessorKey: "negative",
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} label="Neg" />
-        ),
+        header: ({ column }) => <DataTableColumnHeader column={column} label="Neg" />,
         cell: ({ row }) => (
           <span
             className={cn(
               "text-sm",
+              row.original.incomplete && "text-destructive",
               row.original.winnerSide === "neg" && "font-semibold text-emerald-700",
               row.original.winnerSide === "aff" && "text-muted-foreground"
             )}
           >
-            {row.original.winnerSide === "neg" ? "▲ " : row.original.winnerSide === "aff" ? "▼ " : ""}
             {row.original.negative}
           </span>
         ),
@@ -141,30 +135,53 @@ export function ResultsDataTable({ data }: { data: ResultsRow[] }) {
         enableColumnFilter: true,
       },
       {
+        id: "score",
+        accessorKey: "score",
+        header: ({ column }) => <DataTableColumnHeader column={column} label="Result" />,
+        cell: ({ row }) => <span className="tabular-nums">{row.original.score}</span>,
+        meta: { label: "Result", variant: "text" },
+        enableColumnFilter: false,
+      },
+      {
         id: "adjudicators",
         accessorKey: "adjudicators",
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} label="Adjudicators" />
-        ),
-        meta: { label: "Adjudicators", variant: "text" },
+        header: ({ column }) => <DataTableColumnHeader column={column} label="Adjudicator" />,
+        meta: { label: "Adjudicator", variant: "text" },
         enableColumnFilter: true,
       },
       {
-        id: "score",
-        accessorKey: "score",
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} label="Score" />
-        ),
-        meta: { label: "Score", variant: "text" },
-        enableColumnFilter: false,
+        id: "enteredBy",
+        accessorKey: "enteredBy",
+        header: ({ column }) => <DataTableColumnHeader column={column} label="Entered by" />,
+        cell: ({ row }) =>
+          row.original.enteredBy === "—" ? (
+            <span className="text-xs text-muted-foreground">—</span>
+          ) : (
+            <div className="text-xs">
+              <div>{row.original.enteredBy}</div>
+              <div className="text-muted-foreground">
+                {row.original.enteredAt}
+                {row.original.confirmedBy ? ` · confirmed by ${row.original.confirmedBy}` : ""}
+              </div>
+            </div>
+          ),
+        meta: { label: "Entered by", variant: "text" },
+        enableColumnFilter: true,
       },
       {
         id: "actions",
         header: () => <span className="sr-only">Actions</span>,
         cell: ({ row }) =>
-          row.original.reviewBallotId ? (
-            <BallotReviewActions ballotId={row.original.reviewBallotId} />
-          ) : null,
+          row.original.incomplete ? (
+            <span className="text-xs text-destructive">Fix matchup</span>
+          ) : (
+            <BallotReviewActions
+              debateId={row.original.id}
+              roundId={row.original.roundId}
+              ballotId={row.original.ballotId}
+              status={row.original.status}
+            />
+          ),
         enableSorting: false,
         enableColumnFilter: false,
       },
@@ -177,7 +194,6 @@ export function ResultsDataTable({ data }: { data: ResultsRow[] }) {
     data,
     columns,
     getRowId: (row) => row.id,
-    initialState: { pagination: { pageIndex: 0, pageSize: 25 } },
   });
 
   return (

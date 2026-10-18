@@ -3,6 +3,7 @@ import {
   functionalUpdate,
   type PaginationState,
   type RowData,
+  type RowSelectionState,
   type SortingState,
   type TableOptions,
   type Updater,
@@ -48,7 +49,7 @@ const SORT_KEY = "sort";
 const JOIN_OPERATOR_KEY = "joinOperator";
 const DEBOUNCE_MS = 300;
 const THROTTLE_MS = 50;
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = Number.MAX_SAFE_INTEGER;
 const EMPTY_SORTING: SortingState = [];
 
 interface FiltersDraft {
@@ -313,6 +314,10 @@ function useDataTable<TData extends RowData>({
     debouncedWriteFilters(filters, urlFiltersKey);
   }
 
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>(
+    initialTableState?.rowSelection ?? {}
+  );
+
   const table = useTable(
     {
       ...props,
@@ -325,11 +330,13 @@ function useDataTable<TData extends RowData>({
         sorting,
         columnFilters,
         joinOperator,
+        rowSelection,
       },
       onPaginationChange,
       onSortingChange,
       onColumnFiltersChange,
       onJoinOperatorChange,
+      onRowSelectionChange: setRowSelection,
       manualPagination: isServer,
       manualSorting: isServer,
       manualFiltering: isServer,
@@ -339,6 +346,7 @@ function useDataTable<TData extends RowData>({
       joinOperator: state.joinOperator,
       pagination: state.pagination,
       sorting: state.sorting,
+      rowSelection: state.rowSelection,
     }),
   );
 

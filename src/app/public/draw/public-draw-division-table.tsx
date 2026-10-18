@@ -12,7 +12,9 @@ import type { PublicDrawRow } from "./types";
 
 function uniqueOptions(values: string[]) {
   return [...new Set(values.filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b))
+    .sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+    )
     .map((value) => ({ label: value, value }));
 }
 
@@ -20,10 +22,12 @@ export function PublicDrawDivisionTable({
   rows,
   ariaLabel,
   idPrefix,
+  hideInstitutionFilter = false,
 }: {
   rows: PublicDrawRow[];
   ariaLabel: string;
   idPrefix: string;
+  hideInstitutionFilter?: boolean;
 }) {
   const venueOptions = React.useMemo(
     () => uniqueOptions(rows.map((r) => r.venue)),
@@ -37,6 +41,12 @@ export function PublicDrawDivisionTable({
     () => uniqueOptions(rows.map((r) => r.timeslot)),
     [rows]
   );
+  const institutionOptions = React.useMemo(
+    () => uniqueOptions(rows.flatMap((r) => r.institutions)),
+    [rows]
+  );
+
+  const institutionColumnId = `${idPrefix}-institution`;
 
   const columns = React.useMemo<ColumnDef<DataTableFeatures, PublicDrawRow>[]>(
     () => [
@@ -66,7 +76,10 @@ export function PublicDrawDivisionTable({
         header: ({ column }) => (
           <DataTableColumnHeader column={column} label="Timeslot" />
         ),
-        sortingFn: (a, b) =>
+        sortingFn: (
+          a: { original: PublicDrawRow },
+          b: { original: PublicDrawRow }
+        ) =>
           a.original.timeslotSort - b.original.timeslotSort ||
           a.original.timeslot.localeCompare(b.original.timeslot),
         meta: {
@@ -88,6 +101,29 @@ export function PublicDrawDivisionTable({
           options: roomOptions,
         },
         enableColumnFilter: true,
+      },
+      {
+        id: institutionColumnId,
+        accessorFn: (row) => row.institutions.join("|"),
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} label="Institution" />
+        ),
+        cell: ({ row }) => row.original.institutions.join(", ") || "—",
+        filterFn: (row, _columnId, filterValue) => {
+          const selected = Array.isArray(filterValue)
+            ? filterValue.map(String)
+            : filterValue
+              ? [String(filterValue)]
+              : [];
+          if (selected.length === 0) return true;
+          return row.original.institutions.some((name) => selected.includes(name));
+        },
+        meta: {
+          label: "Institution",
+          variant: "multiSelect",
+          options: institutionOptions,
+        },
+        enableColumnFilter: !hideInstitutionFilter,
       },
       {
         id: `${idPrefix}-affirmative`,
@@ -134,7 +170,15 @@ export function PublicDrawDivisionTable({
         enableColumnFilter: false,
       },
     ],
-    [idPrefix, venueOptions, roomOptions, timeslotOptions]
+    [
+      idPrefix,
+      institutionColumnId,
+      venueOptions,
+      roomOptions,
+      timeslotOptions,
+      institutionOptions,
+      hideInstitutionFilter,
+    ]
   );
 
   const { table } = useDataTable({
@@ -150,6 +194,7 @@ export function PublicDrawDivisionTable({
     },
     initialState: {
       sorting: [{ id: `${idPrefix}-timeslot`, desc: false }],
+      columnVisibility: { [institutionColumnId]: false },
       // Effectively unlimited — show the full draw without paging
       pagination: { pageIndex: 0, pageSize: Number.MAX_SAFE_INTEGER },
     },

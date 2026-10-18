@@ -1,273 +1,224 @@
-import { createId } from "@/lib/id";
-import { rankTeams, groupByWins } from "./rank";
-import { createRng, shuffleInPlace } from "./rng";
-import type {
-  DrawGenerationInput,
-  DrawGenerationResult,
-  DrawTeam,
-  GeneratedDebate,
-  GeneratedBye,
-  PriorMatch,
+import { defaultDrawOptions, type DrawOptions } from "@/db/schema";
+import { allocateBye } from "./bye";
+import { randomPair, roundRobinPair } from "./other-generators";
+import { partitionTeams } from "./partition";
+import { powerPair } from "./power-paired";
+import { sameInstitution, timesMet } from "./rank";
+import { buildReport } from "./report";
+import { createRng } from "./rng";
+import { assignRooms } from "./rooms";
+import { allocateSides } from "./sides";
+import {
+  DrawFatalError,
+  type DrawGenerationInput,
+  type DrawGenerationResult,
+  type DrawIssue,
+  type GeneratedBye,
+  type GeneratedDebate,
+  type Pairing,
 } from "./types";
 
-function haveMet(a: string, b: string, prior: PriorMatch[]): boolean {
-  return prior.some(
-    (m) =>
-      (m.teamAId === a && m.teamBId === b) || (m.teamAId === b && m.teamBId === a)
-  );
-}
-
-function pairScore(
-  a: DrawTeam,
-  b: DrawTeam,
-  prior: PriorMatch[],
-  config: DrawGenerationInput["config"]
-): number {
-  let score = 0;
-  // Prefer closer win records
-  score += Math.abs(a.wins - b.wins) * 100;
-  if (config.pairing.avoidRematch && haveMet(a.id, b.id, prior)) score += 1000;
-  if (config.pairing.avoidSameInstitution && a.institutionId === b.institutionId) {
-    score += 500;
-  }
-  return score;
-}
-
-function allocateBye(
-  teams: DrawTeam[],
-  config: DrawGenerationInput["config"],
-  compromises: string[],
-  softWarnings: string[]
-): { remaining: DrawTeam[]; bye: GeneratedBye | null } {
-  if (teams.length % 2 === 0) {
-    return { remaining: teams, bye: null };
-  }
-
-  const ranked = rankTeams(teams, config);
-  // Prefer lowest-ranked for bye
-  const candidates = [...ranked].reverse();
-
-  let chosen = candidates.find((t) => t.byes === 0) ?? null;
-  if (!chosen) {
-    chosen = candidates[0]!;
-    softWarnings.push(
-      `Second bye allocated to ${chosen.name} — no team without a prior bye was available.`
-    );
-    compromises.push("second_bye");
-  }
-
-  const reason =
-    chosen.byes > 0
-      ? `Uneven bracket; second bye (no alternative without prior bye)`
-      : `Uneven bracket; lowest-ranked eligible team`;
-
-  return {
-    remaining: teams.filter((t) => t.id !== chosen!.id),
-    bye: {
-      teamId: chosen.id,
-      reason,
-      automatic: true,
-    },
-  };
-}
-
-function pairBracket(
-  bracket: DrawTeam[],
-  prior: PriorMatch[],
-  config: DrawGenerationInput["config"],
-  rng: () => number,
-  compromises: string[],
-  softWarnings: string[]
-): Array<{ a: DrawTeam; b: DrawTeam; pullUp: boolean }> {
-  const pool = shuffleInPlace([...bracket], rng);
-  const pairs: Array<{ a: DrawTeam; b: DrawTeam; pullUp: boolean }> = [];
-  const used = new Set<string>();
-
-  // Greedy: for each unpaired team, pick best available opponent
-  for (let i = 0; i < pool.length; i++) {
-    const a = pool[i]!;
-    if (used.has(a.id)) continue;
-    let bestIdx = -1;
-    let bestScore = Infinity;
-    for (let j = i + 1; j < pool.length; j++) {
-      const b = pool[j]!;
-      if (used.has(b.id)) continue;
-      const s = pairScore(a, b, prior, config);
-      if (s < bestScore) {
-        bestScore = s;
-        bestIdx = j;
-      }
-    }
-    if (bestIdx >= 0) {
-      const b = pool[bestIdx]!;
-      used.add(a.id);
-      used.add(b.id);
-      if (config.pairing.avoidRematch && haveMet(a.id, b.id, prior)) {
-        softWarnings.push(`Rematch: ${a.name} vs ${b.name}`);
-        compromises.push("rematch");
-      }
-      if (config.pairing.avoidSameInstitution && a.institutionId === b.institutionId) {
-        softWarnings.push(`Same institution: ${a.name} vs ${b.name}`);
-        compromises.push("same_institution");
-      }
-      pairs.push({ a, b, pullUp: false });
-    }
-  }
-
-  return pairs;
-}
+export { DrawFatalError };
 
 /**
- * Power-pairing draw generator.
- * Hard constraints: no self-debate, no double-booking of teams/rooms in same timeslot.
- * Soft: power pair, avoid rematch/same-institution, minimise pull-ups.
+ * Generate a draw for a round. Pairing happens independently inside each
+ * (venue, timeslot, division) group; rooms come only from the group's venue.
+ * Never throws for data problems — those are returned in `report.issues`.
  */
 export function generateDraw(input: DrawGenerationInput): DrawGenerationResult {
-  const seed = input.seed ?? createId("seed");
+  const seed = input.seed ?? Math.random().toString(36).slice(2);
   const rng = createRng(seed);
-  const hardViolations: string[] = [];
-  const softWarnings: string[] = [];
-  const compromises: string[] = [];
+  const options: DrawOptions = {
+    ...defaultDrawOptions,
+    ...input.config.draw,
+    ...input.options,
+  };
 
-  let teams = [...input.teams];
-  if (input.scope === "division" && input.scopeId) {
-    teams = teams.filter((t) => t.divisionId === input.scopeId);
-  }
+  const effectiveType =
+    options.type === "power_paired" &&
+    input.roundNumber === 1 &&
+    options.firstRoundType === "random"
+      ? "random"
+      : options.type;
 
-  // Validate uniqueness
-  const ids = new Set<string>();
-  for (const t of teams) {
-    if (ids.has(t.id)) hardViolations.push(`Duplicate team in input: ${t.id}`);
-    ids.add(t.id);
-  }
+  const venueName = new Map(input.venues.map((v) => [v.id, v.name]));
+  const slotLabel = new Map(input.timeslots.map((t) => [t.id, t.startsAt]));
+  const divisionName = new Map(input.divisions.map((d) => [d.id, d.name]));
+  const labels = {
+    venue: (id: string) => venueName.get(id) ?? "Unknown venue",
+    timeslot: (id: string) => slotLabel.get(id) ?? "Unknown timeslot",
+    division: (id: string) => divisionName.get(id) ?? "Unknown division",
+  };
 
-  const { remaining, bye } = allocateBye(teams, input.config, compromises, softWarnings);
-  const byes: GeneratedBye[] = bye ? [bye] : [];
-
-  // Group by wins (high to low), pair within groups, pull up leftovers
-  const ranked = rankTeams(remaining, input.config);
-  const byWins = groupByWins(ranked);
-  const winLevels = [...byWins.keys()].sort((a, b) => b - a);
-
-  const allPairs: Array<{ a: DrawTeam; b: DrawTeam; pullUp: boolean }> = [];
-  let carry: DrawTeam[] = [];
-
-  for (const wins of winLevels) {
-    const group = [...(byWins.get(wins) ?? []), ...carry];
-    carry = [];
-    if (group.length % 2 === 1) {
-      // Pull-up: carry the lowest-ranked in this group to next (lower) bracket
-      const sorted = rankTeams(group, input.config);
-      const pull = sorted[sorted.length - 1]!;
-      carry = [pull];
-      compromises.push("pull_up");
-      softWarnings.push(
-        `Pull-up: ${pull.name} moved from ${wins}-win bracket to pair with lower bracket`
-      );
-      const pairable = group.filter((t) => t.id !== pull.id);
-      allPairs.push(
-        ...pairBracket(pairable, input.priorMatches, input.config, rng, compromises, softWarnings)
-      );
-    } else {
-      allPairs.push(
-        ...pairBracket(group, input.priorMatches, input.config, rng, compromises, softWarnings)
-      );
-    }
-  }
-
-  if (carry.length > 0) {
-    // Should not happen if bye handled odd count; leftover is a hard issue
-    for (const t of carry) {
-      hardViolations.push(`Unpaired team after brackets: ${t.name}`);
-    }
-  }
-
-  // Allocate rooms and timeslots without conflicts
-  const rooms =
-    input.scope === "venue" && input.scopeId
-      ? input.rooms.filter((r) => r.venueId === input.scopeId)
-      : [...input.rooms];
-  const timeslots = [...input.timeslots].sort((a, b) => a.sortOrder - b.sortOrder);
-
-  if (rooms.length === 0 && allPairs.length > 0) {
-    hardViolations.push("No rooms available for debate allocation");
-  }
-  if (timeslots.length === 0 && allPairs.length > 0) {
-    hardViolations.push("No timeslots available for debate allocation");
-  }
-
-  const capacity = rooms.length * Math.max(timeslots.length, 1);
-  if (allPairs.length > capacity && rooms.length > 0 && timeslots.length > 0) {
-    hardViolations.push(
-      `Insufficient room/timeslot capacity: ${allPairs.length} debates need slots, capacity ${capacity}`
-    );
-  }
-
+  const partition = partitionTeams(input.teams, input.venues, input.timeslots, input.divisions);
+  const issues: DrawIssue[] = [...partition.issues];
   const debates: GeneratedDebate[] = [];
-  let slotIndex = 0;
+  const byes: GeneratedBye[] = [];
 
-  for (const pair of allPairs) {
-    const room = rooms.length > 0 ? rooms[slotIndex % rooms.length]! : null;
-    const timeslot =
-      timeslots.length > 0
-        ? timeslots[Math.floor(slotIndex / Math.max(rooms.length, 1)) % timeslots.length]!
-        : null;
-    slotIndex++;
+  for (const group of partition.groups) {
+    const where = `${labels.venue(group.key.venueId)} · ${labels.timeslot(group.key.timeslotId)} · ${labels.division(group.key.divisionId)}`;
 
-    // Side allocation: higher-ranked affirmative by default (configurable fairness later)
-    const [aff, neg] =
-      pair.a.wins > pair.b.wins ||
-      (pair.a.wins === pair.b.wins && pair.a.speakerPoints >= pair.b.speakerPoints)
-        ? [pair.a, pair.b]
-        : [pair.b, pair.a];
-
-    // Flip sides with seed for fairness occasionally
-    const useFlip = input.config.sides.balanceFairness && rng() > 0.5;
-    const affirmative = useFlip ? neg : aff;
-    const negative = useFlip ? aff : neg;
-
-    if (affirmative.id === negative.id) {
-      hardViolations.push(`Team paired against itself: ${affirmative.name}`);
+    if (group.teams.length === 1) {
+      const only = group.teams[0]!;
+      issues.push({
+        code: "single_team_group",
+        severity: "warning",
+        message: `${only.name} is the only team at ${where} and cannot be paired — it receives a bye`,
+        teamIds: [only.id],
+        ...group.key,
+        fixHref: `/admin/teams/${only.id}`,
+      });
+      byes.push({
+        teamId: only.id,
+        teamName: only.name,
+        group: group.key,
+        reason: "Only team in its venue, timeslot and division",
+        automatic: true,
+      });
       continue;
     }
 
-    debates.push({
-      affirmativeTeamId: affirmative.id,
-      negativeTeamId: negative.id,
-      affirmativeTeamName: affirmative.name,
-      negativeTeamName: negative.name,
-      divisionId: affirmative.divisionId ?? negative.divisionId,
-      venueId: room?.venueId ?? null,
-      roomId: room?.id ?? null,
-      timeslotId: timeslot?.id ?? null,
-      isPullUp: pair.pullUp,
-      isRematch: haveMet(affirmative.id, negative.id, input.priorMatches),
-      isSameInstitution:
-        Boolean(affirmative.institutionId) &&
-        affirmative.institutionId === negative.institutionId,
-    });
-  }
+    let pool = group.teams;
+    if (effectiveType !== "manual") {
+      const byeResult = allocateBye(pool, group.key, input.config, options, rng, {
+        venue: labels.venue(group.key.venueId),
+        timeslot: labels.timeslot(group.key.timeslotId),
+        division: labels.division(group.key.divisionId),
+      });
+      pool = byeResult.remaining;
+      if (byeResult.bye) byes.push(byeResult.bye);
+      issues.push(...byeResult.issues);
+    }
 
-  // Detect double-booked teams (should never happen if pairing correct)
-  const teamSlots = new Map<string, string>();
-  for (const d of debates) {
-    for (const tid of [d.affirmativeTeamId, d.negativeTeamId]) {
-      const key = `${tid}:${d.timeslotId ?? "none"}`;
-      if (teamSlots.has(key)) {
-        hardViolations.push(`Team double-booked in timeslot: ${tid}`);
+    let pairings: Pairing[] = [];
+    try {
+      switch (effectiveType) {
+        case "random":
+          pairings = randomPair(pool, rng);
+          break;
+        case "round_robin":
+          pairings = roundRobinPair(pool, input.roundNumber);
+          break;
+        case "manual":
+          pairings = [];
+          break;
+        case "power_paired":
+        default:
+          pairings = powerPair(pool, input.config, options, rng);
       }
-      teamSlots.set(key, d.affirmativeTeamId);
+    } catch (error) {
+      issues.push({
+        code: "generator_error",
+        severity: "fatal",
+        message: `${where}: ${error instanceof Error ? error.message : String(error)}`,
+        ...group.key,
+      });
+      continue;
+    }
+
+    if (effectiveType === "manual") {
+      issues.push({
+        code: "manual_draw",
+        severity: "info",
+        message: `${where}: ${pool.length} teams left unpaired for manual matchups`,
+        teamIds: pool.map((t) => t.id),
+        ...group.key,
+      });
+      // Create empty rooms for the admin to fill.
+      const slots = Math.floor(pool.length / 2);
+      for (let i = 0; i < slots; i++) {
+        debates.push({
+          group: group.key,
+          affirmativeTeamId: "",
+          negativeTeamId: "",
+          affirmativeTeamName: "",
+          negativeTeamName: "",
+          divisionId: group.key.divisionId,
+          venueId: group.key.venueId,
+          timeslotId: group.key.timeslotId,
+          roomId: null,
+          bracket: 0,
+          roomRank: i + 1,
+          flags: ["manual"],
+          isPullUp: false,
+          isRematch: false,
+          isSameInstitution: false,
+        });
+      }
+      continue;
+    }
+
+    allocateSides(pairings, options.sideAllocation, rng);
+
+    for (const pairing of pairings) {
+      const aff = pairing.teams[pairing.affIndex];
+      const neg = pairing.teams[pairing.affIndex === 0 ? 1 : 0];
+      const met = timesMet(aff, neg);
+      const sameInst = sameInstitution(aff, neg);
+      const flags = [...pairing.flags];
+      if (met > 0) {
+        flags.push("rematch");
+        issues.push({
+          code: effectiveType === "round_robin" ? "round_robin_rematch" : "rematch",
+          severity: "warning",
+          message: `${aff.name} and ${neg.name} have already met ${met === 1 ? "once" : `${met} times`} (${where})`,
+          teamIds: [aff.id, neg.id],
+          ...group.key,
+        });
+      }
+      if (sameInst) {
+        flags.push("same_institution");
+        issues.push({
+          code: "same_institution",
+          severity: "warning",
+          message: `${aff.name} and ${neg.name} are from the same school (${where})`,
+          teamIds: [aff.id, neg.id],
+          ...group.key,
+        });
+      }
+      const pullupTeams = Object.keys(pairing.teamFlags);
+      if (pullupTeams.length > 0) {
+        const names = pullupTeams
+          .map((id) => pairing.teams.find((t) => t.id === id)?.name)
+          .filter(Boolean)
+          .join(", ");
+        issues.push({
+          code: "pullup",
+          severity: "info",
+          message: `${names} pulled up to the ${pairing.bracket}-win bracket (${where})`,
+          teamIds: pullupTeams,
+          ...group.key,
+        });
+      }
+      debates.push({
+        group: group.key,
+        affirmativeTeamId: aff.id,
+        negativeTeamId: neg.id,
+        affirmativeTeamName: aff.name,
+        negativeTeamName: neg.name,
+        divisionId: group.key.divisionId,
+        venueId: group.key.venueId,
+        timeslotId: group.key.timeslotId,
+        roomId: null,
+        bracket: pairing.bracket,
+        roomRank: pairing.roomRank,
+        flags,
+        isPullUp: flags.includes("pullup"),
+        isRematch: met > 0,
+        isSameInstitution: sameInst,
+      });
     }
   }
 
-  return {
+  issues.push(...assignRooms(debates, input.rooms, labels));
+
+  const report = buildReport({
+    issues,
     debates,
     byes,
-    hardViolations,
-    softWarnings,
-    compromises: [...new Set(compromises)],
-    seed,
-  };
-}
+    groups: partition.groups.length,
+    teams: input.teams.length,
+  });
 
-export { rankTeams };
+  return { debates, byes, report, options, seed };
+}

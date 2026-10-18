@@ -1,28 +1,68 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, rounds } from "@/db/schema";
+import {
+  competitions,
+  defaultCompetitionConfig,
+  rounds,
+} from "@/db/schema";
 
-/** Single-competition sites always operate against the first (only) competition. */
-export async function getSiteCompetition() {
-  const [competition] = await db
+/** Stable singleton competition for this single-competition site. */
+export const SITE_COMPETITION_ID = "comp_site";
+
+export type SiteCompetition = typeof competitions.$inferSelect;
+
+/**
+ * Ensure the site competition row exists, then return it.
+ * There is no multi-competition mode — callers can treat this as always present.
+ */
+export async function ensureSiteCompetition(): Promise<SiteCompetition> {
+  const [existing] = await db
     .select()
     .from(competitions)
     .orderBy(asc(competitions.createdAt))
     .limit(1);
-  return competition ?? null;
+
+  if (existing) return existing;
+
+  await db.insert(competitions).values({
+    id: SITE_COMPETITION_ID,
+    name: "WADL",
+    shortName: "WADL",
+    season: new Date().getFullYear().toString(),
+    status: "running",
+    config: defaultCompetitionConfig,
+  });
+
+  const [created] = await db
+    .select()
+    .from(competitions)
+    .where(eq(competitions.id, SITE_COMPETITION_ID))
+    .limit(1);
+
+  if (!created) {
+    // Race: another process inserted a different first row
+    const [fallback] = await db
+      .select()
+      .from(competitions)
+      .orderBy(asc(competitions.createdAt))
+      .limit(1);
+    if (fallback) return fallback;
+    throw new Error("Failed to create site competition");
+  }
+  return created;
+}
+
+/** @deprecated Prefer ensureSiteCompetition — always returns the site competition. */
+export async function getSiteCompetition() {
+  return ensureSiteCompetition();
 }
 
 export async function requireSiteCompetition() {
-  const competition = await getSiteCompetition();
-  if (!competition) {
-    throw new Error("No competition configured for this site");
-  }
-  return competition;
+  return ensureSiteCompetition();
 }
 
 export async function getSiteRounds() {
-  const competition = await getSiteCompetition();
-  if (!competition) return [];
+  const competition = await ensureSiteCompetition();
   return db
     .select({
       id: rounds.id,

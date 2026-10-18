@@ -113,6 +113,10 @@ export async function createAccount(input: z.infer<typeof createUserSchema>) {
   });
   revalidatePath("/admin/accounts");
   revalidatePath("/admin/adjudicators");
+  revalidatePath("/admin/institutions");
+  for (const institutionId of data.institutionIds) {
+    revalidatePath(`/admin/institutions/${institutionId}`);
+  }
   return { id: userId };
 }
 
@@ -229,6 +233,7 @@ export async function assignCoordinatorInstitution(
   });
   revalidatePath("/admin/accounts");
   revalidatePath("/admin/institutions");
+  revalidatePath(`/admin/institutions/${institutionId}`);
 }
 
 export async function removeCoordinatorInstitution(
@@ -266,6 +271,7 @@ export async function removeCoordinatorInstitution(
   });
   revalidatePath("/admin/accounts");
   revalidatePath("/admin/institutions");
+  revalidatePath(`/admin/institutions/${institutionId}`);
 }
 
 export async function addUserRole(

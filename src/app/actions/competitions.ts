@@ -9,7 +9,6 @@ import {
   defaultCompetitionConfig,
   divisions,
   rounds,
-  timeslots,
 } from "@/db/schema";
 import { writeAudit } from "@/lib/audit";
 import { getAuthContext } from "@/lib/auth/session";
@@ -100,37 +99,37 @@ export async function updateCompetitionStatus(id: string, status: string) {
   revalidatePath(`/admin/competitions/${id}`);
 }
 
-export async function addRound(competitionId: string, name: string, number: number) {
+export async function addRound(
+  competitionId: string,
+  name: string,
+  number: number,
+  startDate: string
+) {
   const ctx = await getAuthContext();
   if (!ctx) throw new Error("UNAUTHORIZED");
   requirePermission(ctx, "competitions:manage");
+
+  const { requireMondayStart } = await import("@/lib/roster/dates");
+  const monday = requireMondayStart(startDate);
+
   const id = createId("rnd");
   await db.insert(rounds).values({
     id,
     competitionId,
     name,
     number,
-    date: new Date(),
-  });
-  const start = new Date();
-  start.setHours(16, 0, 0, 0);
-  await db.insert(timeslots).values({
-    id: createId("ts"),
-    roundId: id,
-    label: "4:00 PM",
-    startsAt: start,
-    sortOrder: 0,
+    date: monday,
   });
   await writeAudit({
     actorId: ctx.userId,
     action: "round.create",
     entityType: "round",
     entityId: id,
-    details: { competitionId, name, number },
+    details: { competitionId, name, number, startDate },
   });
   revalidatePath(`/admin/competitions/${competitionId}`);
   revalidatePath("/admin/settings/rounds");
-  revalidatePath("/admin/draws");
+  revalidatePath("/admin/rounds", "layout");
   revalidatePath("/admin");
   return { id };
 }
@@ -161,6 +160,36 @@ export async function updateCompetition(
   });
   revalidatePath("/admin/competitions");
   revalidatePath(`/admin/competitions/${id}`);
+  revalidatePath("/admin/settings");
+}
+
+/** Update the singleton site competition display name. */
+export async function updateSiteCompetitionName(name: string) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "competitions:manage");
+
+  const trimmed = z.string().min(2).max(200).parse(name.trim());
+  const { ensureSiteCompetition } = await import("@/lib/competition");
+  const competition = await ensureSiteCompetition();
+
+  await db
+    .update(competitions)
+    .set({
+      name: trimmed,
+      updatedAt: new Date(),
+    })
+    .where(eq(competitions.id, competition.id));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "competition.name",
+    entityType: "competition",
+    entityId: competition.id,
+    details: { name: trimmed },
+  });
+  revalidatePath("/admin/settings");
+  revalidatePath("/admin");
+  revalidatePath("/");
 }
 
 export async function deleteCompetition(id: string) {
@@ -175,7 +204,7 @@ export async function deleteCompetition(id: string) {
     entityId: id,
   });
   revalidatePath("/admin/competitions");
-  revalidatePath("/admin/draws");
+  revalidatePath("/admin/rounds", "layout");
   revalidatePath("/admin/teams");
 }
 
@@ -187,7 +216,6 @@ export async function deleteRound(roundId: string) {
     where: (t, { eq: e }) => e(t.id, roundId),
   });
   if (!round) throw new Error("NOT_FOUND");
-  await db.delete(timeslots).where(eq(timeslots.roundId, roundId));
   await db.delete(rounds).where(eq(rounds.id, roundId));
   await writeAudit({
     actorId: ctx.userId,
@@ -198,13 +226,13 @@ export async function deleteRound(roundId: string) {
   });
   revalidatePath(`/admin/competitions/${round.competitionId}`);
   revalidatePath("/admin/settings/rounds");
-  revalidatePath("/admin/draws");
+  revalidatePath("/admin/rounds", "layout");
   revalidatePath("/admin");
 }
 
 export async function updateRound(
   roundId: string,
-  input: { name: string; number: number; date?: string | null }
+  input: { name: string; number: number; date: string }
 ) {
   const ctx = await getAuthContext();
   if (!ctx) throw new Error("UNAUTHORIZED");
@@ -214,12 +242,15 @@ export async function updateRound(
   });
   if (!round) throw new Error("NOT_FOUND");
 
+  const { requireMondayStart } = await import("@/lib/roster/dates");
+  const monday = requireMondayStart(input.date);
+
   await db
     .update(rounds)
     .set({
       name: input.name,
       number: input.number,
-      date: input.date ? new Date(input.date) : round.date,
+      date: monday,
     })
     .where(eq(rounds.id, roundId));
 

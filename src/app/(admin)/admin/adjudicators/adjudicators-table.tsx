@@ -1,7 +1,10 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { deleteAdjudicatorProfile } from "@/app/actions/adjudicators";
+import {
+  deleteAdjudicatorProfile,
+  deleteAdjudicatorProfiles,
+} from "@/app/actions/adjudicators";
 import { DeleteButton } from "@/components/delete-button";
 import { EntityDataTable } from "@/components/data-table/entity-data-table";
 import type { DataTableFeatures } from "@/lib/data-table-features";
@@ -52,6 +55,13 @@ export function AdjudicatorsTable({ rows }: { rows: AdjudicatorRow[] }) {
     <EntityDataTable
       data={rows}
       ariaLabel="Adjudicators"
+      enableRowSelection
+      bulkDelete={{
+        entityLabel: "adjudicator",
+        onDelete: async (ids) => {
+          await deleteAdjudicatorProfiles(ids);
+        },
+      }}
       trailingColumn={trailingColumn}
       columns={[
         { id: "name", accessorKey: "name", label: "Name" },

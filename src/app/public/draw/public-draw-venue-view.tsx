@@ -30,9 +30,13 @@ import {
 } from "@/components/ui/table";
 import type { PublicDrawRow } from "./types";
 
+function naturalCompare(a: string, b: string) {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
 function uniqueOptions(values: string[]) {
   return [...new Set(values.filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b))
+    .sort(naturalCompare)
     .map((value) => ({ label: value, value }));
 }
 
@@ -155,12 +159,23 @@ function MultiFacetedFilter({
   );
 }
 
-export function PublicDrawVenueView({ rows }: { rows: PublicDrawRow[] }) {
+export function PublicDrawVenueView({
+  rows,
+  lockedInstitutions,
+}: {
+  rows: PublicDrawRow[];
+  /** When set, debates are already institution-scoped and the filter is hidden. */
+  lockedInstitutions?: string[];
+}) {
   const [venues, setVenues] = useState<string[]>([]);
   const [divisions, setDivisions] = useState<string[]>([]);
+  const [institutions, setInstitutions] = useState<string[]>(
+    lockedInstitutions ?? []
+  );
   const [teamQuery, setTeamQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("room");
   const [sortDesc, setSortDesc] = useState(false);
+  const institutionFilterLocked = Boolean(lockedInstitutions?.length);
 
   const venueOptions = useMemo(
     () => uniqueOptions(rows.map((r) => r.venue)),
@@ -170,12 +185,22 @@ export function PublicDrawVenueView({ rows }: { rows: PublicDrawRow[] }) {
     () => uniqueOptions(rows.map((r) => r.divisionName)),
     [rows]
   );
+  const institutionOptions = useMemo(
+    () => uniqueOptions(rows.flatMap((r) => r.institutions)),
+    [rows]
+  );
 
   const filtered = useMemo(() => {
     const q = teamQuery.trim().toLowerCase();
     return rows.filter((r) => {
       if (venues.length && !venues.includes(r.venue)) return false;
       if (divisions.length && !divisions.includes(r.divisionName)) return false;
+      if (
+        institutions.length &&
+        !r.institutions.some((name) => institutions.includes(name))
+      ) {
+        return false;
+      }
       if (
         q &&
         !`${r.affirmative} ${r.negative}`.toLowerCase().includes(q)
@@ -184,40 +209,69 @@ export function PublicDrawVenueView({ rows }: { rows: PublicDrawRow[] }) {
       }
       return true;
     });
-  }, [rows, venues, divisions, teamQuery]);
+  }, [rows, venues, divisions, institutions, teamQuery]);
 
   const grouped = useMemo(() => {
     const map = new Map<
       string,
-      Map<string, { sort: number; label: string; rows: PublicDrawRow[] }>
-    >();
-    for (const row of filtered) {
-      if (!map.has(row.venue)) map.set(row.venue, new Map());
-      const slots = map.get(row.venue)!;
-      const key = row.timeslotId ?? row.timeslot;
-      if (!slots.has(key)) {
-        slots.set(key, {
-          sort: row.timeslotSort,
-          label: row.timeslot,
-          rows: [],
-        });
+      {
+        venue: string;
+        address: string;
+        date: string;
+        dateSort: string;
+        slots: Map<string, { sort: number; label: string; rows: PublicDrawRow[] }>;
       }
-      slots.get(key)!.rows.push(row);
+    >();
+
+    for (const row of filtered) {
+      let group = map.get(row.venue);
+      if (!group) {
+        group = {
+          venue: row.venue,
+          address: row.venueAddress,
+          date: row.date,
+          dateSort: row.dateSort,
+          slots: new Map(),
+        };
+        map.set(row.venue, group);
+      } else {
+        if (!group.address && row.venueAddress) group.address = row.venueAddress;
+        // Prefer a real roster-derived date over blank; otherwise keep the first.
+        if ((!group.dateSort || group.date === "—") && row.dateSort) {
+          group.date = row.date;
+          group.dateSort = row.dateSort;
+        }
+      }
+
+      const slotKey = row.timeslotId ?? row.timeslot;
+      let slot = group.slots.get(slotKey);
+      if (!slot) {
+        slot = { sort: row.timeslotSort, label: row.timeslot, rows: [] };
+        group.slots.set(slotKey, slot);
+      }
+      slot.rows.push(row);
     }
 
     const cmp = (a: PublicDrawRow, b: PublicDrawRow) => {
       const av = String(a[sortKey] ?? "");
       const bv = String(b[sortKey] ?? "");
-      const result = av.localeCompare(bv);
+      const result =
+        sortKey === "room" ? naturalCompare(av, bv) : av.localeCompare(bv);
       return sortDesc ? -result : result;
     };
 
-    return [...map.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([venue, slots]) => ({
-        venue,
-        slots: [...slots.values()]
-          .sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label))
+    return [...map.values()]
+      .sort(
+        (a, b) =>
+          (a.dateSort || "9999-99-99").localeCompare(b.dateSort || "9999-99-99") ||
+          naturalCompare(a.venue, b.venue)
+      )
+      .map((group) => ({
+        venue: group.venue,
+        address: group.address,
+        date: group.date,
+        slots: [...group.slots.values()]
+          .sort((a, b) => a.sort - b.sort || naturalCompare(a.label, b.label))
           .map((slot) => ({
             ...slot,
             rows: [...slot.rows].sort(cmp),
@@ -234,7 +288,10 @@ export function PublicDrawVenueView({ rows }: { rows: PublicDrawRow[] }) {
   }
 
   const hasFilters =
-    venues.length > 0 || divisions.length > 0 || teamQuery.trim();
+    venues.length > 0 ||
+    divisions.length > 0 ||
+    (!institutionFilterLocked && institutions.length > 0) ||
+    teamQuery.trim();
 
   return (
     <div className="space-y-4">
@@ -251,6 +308,14 @@ export function PublicDrawVenueView({ rows }: { rows: PublicDrawRow[] }) {
           value={divisions}
           onChange={setDivisions}
         />
+        {institutionFilterLocked ? null : (
+          <MultiFacetedFilter
+            title="Institution"
+            options={institutionOptions}
+            value={institutions}
+            onChange={setInstitutions}
+          />
+        )}
         <Input
           value={teamQuery}
           onChange={(e) => setTeamQuery(e.target.value)}
@@ -264,6 +329,7 @@ export function PublicDrawVenueView({ rows }: { rows: PublicDrawRow[] }) {
             onClick={() => {
               setVenues([]);
               setDivisions([]);
+              if (!institutionFilterLocked) setInstitutions([]);
               setTeamQuery("");
             }}
           >
@@ -278,75 +344,89 @@ export function PublicDrawVenueView({ rows }: { rows: PublicDrawRow[] }) {
           No debates match the current filters
         </div>
       ) : (
-        grouped.map(({ venue, slots }) => (
-          <section key={venue} className="overflow-hidden rounded-lg border">
-            <div className="flex items-center gap-1.5 border-b bg-[#333] px-3 py-1.5 text-sm font-semibold text-white">
-              <MapPin className="size-3.5 shrink-0 opacity-80" />
-              {venue}
-            </div>
-            {slots.map((slot) => (
-              <div
-                key={`${venue}-${slot.label}`}
-                className="border-b last:border-b-0"
-              >
-                <div className="border-b bg-[#444] px-3 py-1 text-xs font-semibold tracking-wide text-white">
-                  {slot.label}
+        <div className="space-y-10">
+          {grouped.map((group) => {
+            const meta = [group.date !== "—" ? group.date : null, group.address || null]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <section key={group.venue} className="overflow-hidden rounded-lg border">
+                <div className="border-b bg-[#333] px-4 py-3 text-white">
+                  <div className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+                    <MapPin className="size-4 shrink-0 opacity-80" />
+                    {group.venue}
+                  </div>
+                  {meta ? (
+                    <p className="mt-0.5 ps-6 text-sm font-normal text-white/75">
+                      {meta}
+                    </p>
+                  ) : null}
                 </div>
-                <Table className="border-collapse text-[15px] [&_td]:px-2 [&_td]:py-2 [&_th]:px-2">
-                  <TableHeader>
-                    <TableRow>
-                      <SortableHead
-                        label="Room"
-                        className="w-[100px]"
-                        active={sortKey === "room"}
-                        desc={sortDesc}
-                        onClick={() => toggleSort("room")}
-                      />
-                      <SortableHead
-                        label="Division"
-                        className="w-[140px]"
-                        active={sortKey === "divisionName"}
-                        desc={sortDesc}
-                        onClick={() => toggleSort("divisionName")}
-                      />
-                      <SortableHead
-                        label="Affirmative"
-                        active={sortKey === "affirmative"}
-                        desc={sortDesc}
-                        onClick={() => toggleSort("affirmative")}
-                      />
-                      <SortableHead
-                        label="Negative"
-                        active={sortKey === "negative"}
-                        desc={sortDesc}
-                        onClick={() => toggleSort("negative")}
-                      />
-                      <SortableHead
-                        label="Comments"
-                        active={sortKey === "comments"}
-                        desc={sortDesc}
-                        onClick={() => toggleSort("comments")}
-                      />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {slot.rows.map((row) => (
-                      <TableRow key={row.id}>
-                        <TableCell>{row.room}</TableCell>
-                        <TableCell>{row.divisionName}</TableCell>
-                        <TableCell>{row.affirmative}</TableCell>
-                        <TableCell>{row.negative}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {row.comments}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            ))}
-          </section>
-        ))
+                {group.slots.map((slot) => (
+                  <div
+                    key={`${group.venue}-${slot.label}`}
+                    className="border-b last:border-b-0"
+                  >
+                    <div className="border-b bg-[#444] px-4 py-2 text-sm font-semibold tracking-wide text-white">
+                      {slot.label}
+                    </div>
+                    <Table className="border-collapse text-[15px] [&_td]:px-2 [&_td]:py-2 [&_th]:px-2">
+                      <TableHeader>
+                        <TableRow>
+                          <SortableHead
+                            label="Room"
+                            className="w-[100px]"
+                            active={sortKey === "room"}
+                            desc={sortDesc}
+                            onClick={() => toggleSort("room")}
+                          />
+                          <SortableHead
+                            label="Division"
+                            className="w-[140px]"
+                            active={sortKey === "divisionName"}
+                            desc={sortDesc}
+                            onClick={() => toggleSort("divisionName")}
+                          />
+                          <SortableHead
+                            label="Affirmative"
+                            active={sortKey === "affirmative"}
+                            desc={sortDesc}
+                            onClick={() => toggleSort("affirmative")}
+                          />
+                          <SortableHead
+                            label="Negative"
+                            active={sortKey === "negative"}
+                            desc={sortDesc}
+                            onClick={() => toggleSort("negative")}
+                          />
+                          <SortableHead
+                            label="Comments"
+                            active={sortKey === "comments"}
+                            desc={sortDesc}
+                            onClick={() => toggleSort("comments")}
+                          />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {slot.rows.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell>{row.room}</TableCell>
+                            <TableCell>{row.divisionName}</TableCell>
+                            <TableCell>{row.affirmative}</TableCell>
+                            <TableCell>{row.negative}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {row.comments}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ))}
+              </section>
+            );
+          })}
+        </div>
       )}
     </div>
   );

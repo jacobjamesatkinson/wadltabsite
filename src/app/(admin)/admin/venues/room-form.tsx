@@ -51,12 +51,11 @@ export function RoomForm({ venueId }: { venueId: string }) {
 export function RoomEditButton({
   room,
 }: {
-  room: { id: string; identifier: string; capacity: number | null; available: boolean };
+  room: { id: string; identifier: string; available: boolean };
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [identifier, setIdentifier] = useState(room.identifier);
-  const [capacity, setCapacity] = useState(room.capacity?.toString() ?? "");
   const [available, setAvailable] = useState(room.available);
 
   return (
@@ -66,7 +65,6 @@ export function RoomEditButton({
         setOpen(next);
         if (next) {
           setIdentifier(room.identifier);
-          setCapacity(room.capacity?.toString() ?? "");
           setAvailable(room.available);
         }
       }}
@@ -85,7 +83,6 @@ export function RoomEditButton({
             try {
               await updateRoom(room.id, {
                 identifier,
-                capacity: capacity ? Number(capacity) : null,
                 available,
               });
               toast.success("Room updated");
@@ -99,14 +96,6 @@ export function RoomEditButton({
           <div className="space-y-1">
             <Label>Identifier</Label>
             <Input value={identifier} onChange={(e) => setIdentifier(e.target.value)} required />
-          </div>
-          <div className="space-y-1">
-            <Label>Capacity</Label>
-            <Input
-              type="number"
-              value={capacity}
-              onChange={(e) => setCapacity(e.target.value)}
-            />
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input

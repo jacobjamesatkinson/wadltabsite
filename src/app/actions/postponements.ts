@@ -87,5 +87,5 @@ export async function decidePostponement(
     details: { status, notes },
   });
   revalidatePath("/coordinator/postponements");
-  revalidatePath("/admin/draws");
+  revalidatePath("/admin/rounds", "layout");
 }

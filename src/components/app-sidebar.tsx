@@ -24,6 +24,7 @@ export function AppSidebar({
   rounds,
   settingsItems,
   user,
+  showAuthActions = true,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   title: string;
@@ -31,6 +32,8 @@ export function AppSidebar({
   rounds?: RoundNavItem[];
   settingsItems?: ClientNavItem[];
   user: { name: string; email: string };
+  /** When false, footer shows identity only (no log out) — used by team portals. */
+  showAuthActions?: boolean;
 }) {
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -54,7 +57,18 @@ export function AppSidebar({
         {settingsItems ? <NavSettings items={settingsItems} /> : null}
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={user} />
+        {showAuthActions ? (
+          <NavUser user={user} />
+        ) : (
+          <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
+            <div className="grid flex-1 text-left leading-tight">
+              <span className="truncate font-medium">{user.name}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {user.email}
+              </span>
+            </div>
+          </div>
+        )}
       </SidebarFooter>
     </Sidebar>
   );

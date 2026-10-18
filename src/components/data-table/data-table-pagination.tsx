@@ -20,6 +20,12 @@ import {
 } from "@/components/ui/select";
 import { ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight } from "lucide-react";
 
+const ALL_PAGE_SIZE = Number.MAX_SAFE_INTEGER;
+
+function formatPageSizeLabel(size: number) {
+  return size >= ALL_PAGE_SIZE ? "All" : String(size);
+}
+
 interface DataTablePaginationProps<
   TData extends RowData,
 > extends React.ComponentProps<"div"> {
@@ -29,7 +35,7 @@ interface DataTablePaginationProps<
 
 export function DataTablePagination<TData extends RowData>({
   table,
-  pageSizeOptions = [10, 20, 30, 40, 50],
+  pageSizeOptions = [10, 20, 30, 40, 50, ALL_PAGE_SIZE],
   className,
   ...props
 }: DataTablePaginationProps<TData>) {
@@ -119,14 +125,18 @@ function DataTablePaginationContent<TData extends RowData>({
               table.setPageSize(Number(value));
             }}
           >
-            <SelectTrigger aria-labelledby={pageSizeLabelId} className="w-18">
-              <SelectValue placeholder={pageSize} />
+            <SelectTrigger aria-labelledby={pageSizeLabelId} className="w-20">
+              <SelectValue>
+                {(value: string | null) =>
+                  value == null ? pageSize : formatPageSizeLabel(Number(value))
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent side="top" dir={dir}>
               <SelectGroup>
-                {pageSizeOptions.map((pageSize) => (
-                  <SelectItem key={pageSize} value={`${pageSize}`}>
-                    {pageSize}
+                {pageSizeOptions.map((option) => (
+                  <SelectItem key={option} value={`${option}`}>
+                    {formatPageSizeLabel(option)}
                   </SelectItem>
                 ))}
               </SelectGroup>

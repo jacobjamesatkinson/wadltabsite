@@ -13,9 +13,7 @@ export type RoomTableRow = {
   venueId: string;
   venueName: string;
   room: string;
-  capacity: string;
   available: string;
-  capacityValue: number | null;
   availableValue: boolean;
   identifier: string;
 };
@@ -25,6 +23,7 @@ export type VenueHeader = {
   name: string;
   address: string | null;
   status: string;
+  rosterDay: string | null;
 };
 
 export function VenuesTable({
@@ -45,7 +44,6 @@ export function VenuesTable({
             room={{
               id: r.id,
               identifier: r.identifier,
-              capacity: r.capacityValue,
               available: r.availableValue,
             }}
           />
@@ -64,11 +62,17 @@ export function VenuesTable({
   return (
     <div className="space-y-6">
       {venues.map((v) => (
-        <section key={v.id} className="space-y-3 border p-4">
+        <section key={v.id} className="space-y-3 rounded-lg border p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="font-semibold">{v.name}</h2>
               <p className="text-sm text-muted-foreground">{v.address}</p>
+              <p className="mt-1 text-sm">
+                Roster:{" "}
+                <span className="font-medium">
+                  {v.rosterDay ?? "Unassigned"}
+                </span>
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <VenueForm venue={v} />
@@ -88,12 +92,6 @@ export function VenuesTable({
             trailingColumn={trailingColumn}
             columns={[
               { id: "room", accessorKey: "room", label: "Room" },
-              {
-                id: "capacity",
-                accessorKey: "capacity",
-                label: "Capacity",
-                variant: "text",
-              },
               {
                 id: "available",
                 accessorKey: "available",

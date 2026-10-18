@@ -15,7 +15,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
-    "db:setup": "tsx src/db/migrate.ts && tsx src/db/seed.ts",
+    "db:wipe": "tsx src/db/wipe.ts",
+    "db:setup": "tsx src/db/migrate.ts && tsx src/db/wipe.ts && tsx src/db/seed.ts",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -27,30 +27,3 @@ export function computeStandings(
     return a.teamId.localeCompare(b.teamId);
   });
 }
-
-export function applyAcceptedBallot(params: {
-  affirmativeTeamId: string;
-  negativeTeamId: string;
-  winnerTeamId: string;
-  affirmativePoints: number;
-  negativePoints: number;
-  teams: Map<string, StandingRow>;
-}): void {
-  const { teams, winnerTeamId, affirmativeTeamId, negativeTeamId } = params;
-  const aff = teams.get(affirmativeTeamId);
-  const neg = teams.get(negativeTeamId);
-  if (!aff || !neg) return;
-
-  aff.speakerPoints += params.affirmativePoints;
-  neg.speakerPoints += params.negativePoints;
-  aff.played += 1;
-  neg.played += 1;
-
-  if (winnerTeamId === affirmativeTeamId) {
-    aff.wins += 1;
-    neg.losses += 1;
-  } else if (winnerTeamId === negativeTeamId) {
-    neg.wins += 1;
-    aff.losses += 1;
-  }
-}

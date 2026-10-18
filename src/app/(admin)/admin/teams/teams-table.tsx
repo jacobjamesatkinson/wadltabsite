@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { deleteTeams } from "@/app/actions/teams";
 import { EntityDataTable } from "@/components/data-table/entity-data-table";
 
 export type TeamTableRow = {
@@ -8,6 +9,9 @@ export type TeamTableRow = {
   name: string;
   identifier: string;
   institution: string;
+  division: string;
+  venue: string;
+  timeslot: string;
   record: string;
   speakers: number;
   status: string;
@@ -18,6 +22,13 @@ export function TeamsTable({ rows }: { rows: TeamTableRow[] }) {
     <EntityDataTable
       data={rows}
       ariaLabel="Teams"
+      enableRowSelection
+      bulkDelete={{
+        entityLabel: "team",
+        onDelete: async (ids) => {
+          await deleteTeams(ids);
+        },
+      }}
       columns={[
         {
           id: "name",
@@ -28,12 +39,19 @@ export function TeamsTable({ rows }: { rows: TeamTableRow[] }) {
               href={`/admin/teams/${row.id}`}
               className="font-medium underline-offset-4 hover:underline"
             >
-              {row.name}{" "}
-              <span className="text-muted-foreground">({row.identifier})</span>
+              {row.name}
             </Link>
           ),
         },
         { id: "institution", accessorKey: "institution", label: "Institution" },
+        {
+          id: "division",
+          accessorKey: "division",
+          label: "Division",
+          variant: "select",
+        },
+        { id: "venue", accessorKey: "venue", label: "Venue" },
+        { id: "timeslot", accessorKey: "timeslot", label: "Timeslot" },
         { id: "record", accessorKey: "record", label: "W–L", variant: "text" },
         {
           id: "speakers",

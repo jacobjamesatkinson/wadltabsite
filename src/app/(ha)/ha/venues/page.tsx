@@ -30,6 +30,9 @@ export default async function HaVenuesPage() {
               <div>
                 <h2 className="font-semibold">{v.name}</h2>
                 <p className="text-sm text-muted-foreground">{v.address}</p>
+                {v.rosterDay ? (
+                  <p className="mt-1 text-sm">Roster: {v.rosterDay}</p>
+                ) : null}
               </div>
               <RoomForm venueId={v.id} />
             </div>
@@ -38,7 +41,7 @@ export default async function HaVenuesPage() {
                 <div key={r.id} className="rounded-md border bg-muted/30 p-3 text-sm">
                   <p className="font-medium">Room {r.identifier}</p>
                   <p className="text-muted-foreground">
-                    Cap {r.capacity ?? "—"} · {r.available ? "Open" : "Closed"}
+                    {r.available ? "Open" : "Closed"}
                   </p>
                 </div>
               ))}
@@ -47,14 +50,14 @@ export default async function HaVenuesPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Room</TableHead>
-                  <TableHead>Capacity</TableHead>
+                  <TableHead>Available</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {venueRooms.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>{r.identifier}</TableCell>
-                    <TableCell>{r.capacity ?? "—"}</TableCell>
+                    <TableCell>{r.available ? "Yes" : "No"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

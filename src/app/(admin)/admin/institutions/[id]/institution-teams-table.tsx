@@ -27,8 +27,7 @@ export function InstitutionTeamsTable({ rows }: { rows: InstitutionTeamRow[] }) 
               href={`/admin/teams/${row.id}`}
               className="font-medium underline-offset-4 hover:underline"
             >
-              {row.name}{" "}
-              <span className="text-muted-foreground">({row.identifier})</span>
+              {row.name}
             </Link>
           ),
         },

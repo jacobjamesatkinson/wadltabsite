@@ -17,6 +17,7 @@ import {
   Shield,
   Shuffle,
   Trophy,
+  Upload,
   UserCircle,
   Users,
   type LucideIcon,
@@ -42,6 +43,7 @@ const icons: Record<NavIconName, LucideIcon> = {
   Eye,
   Shuffle,
   CheckCircle2,
+  Upload,
 };
 
 export function NavIcon({

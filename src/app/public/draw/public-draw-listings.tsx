@@ -8,27 +8,70 @@ import { PublicDrawDivisionTable } from "./public-draw-division-table";
 import { PublicDrawVenueView } from "./public-draw-venue-view";
 import type { PublicDrawRow, RoundMenuItem } from "./types";
 
+function filterByInstitutions(
+  rows: PublicDrawRow[],
+  lockedInstitutions?: string[]
+) {
+  if (!lockedInstitutions?.length) return rows;
+  const allowed = new Set(lockedInstitutions);
+  return rows.filter((r) => r.institutions.some((name) => allowed.has(name)));
+}
+
+function roundHref(basePath: string, roundId: string) {
+  if (basePath === "/" || basePath === "") return `/?round=${roundId}`;
+  const sep = basePath.includes("?") ? "&" : "?";
+  return `${basePath}${sep}round=${roundId}`;
+}
+
 export function PublicDrawListings({
   rows,
   roundMenus,
   currentRound,
+  roundBasePath = "/",
+  lockedInstitutions,
 }: {
   rows: PublicDrawRow[];
   roundMenus: RoundMenuItem[];
   currentRound?: string;
+  /**
+   * Path used for round sidebar links (e.g. "/" or "/coordinator/draw").
+   * Pass `null` to keep round selection in component state (no URL sync).
+   */
+  roundBasePath?: string | null;
+  /** Only show debates involving these institutions; hides the institution filter. */
+  lockedInstitutions?: string[];
 }) {
+  const scopedRows = React.useMemo(
+    () => filterByInstitutions(rows, lockedInstitutions),
+    [rows, lockedInstitutions]
+  );
+
+  const scopedRoundMenus = React.useMemo(() => {
+    const ids = new Set(scopedRows.map((r) => r.roundId));
+    return roundMenus.filter((r) => ids.has(r.id));
+  }, [roundMenus, scopedRows]);
+
   const [view, setView] = React.useState<"division" | "venue">("venue");
   const [divisionId, setDivisionId] = React.useState<string | null>(null);
+  const [localRound, setLocalRound] = React.useState<string | undefined>(
+    currentRound
+  );
+
+  const requestedRound =
+    roundBasePath == null ? localRound ?? currentRound : currentRound;
 
   const activeRound =
-    currentRound && roundMenus.some((r) => r.id === currentRound)
-      ? currentRound
-      : roundMenus[0]?.id;
-  const activeRoundMeta = roundMenus.find((r) => r.id === activeRound);
+    requestedRound && scopedRoundMenus.some((r) => r.id === requestedRound)
+      ? requestedRound
+      : scopedRoundMenus[0]?.id;
+  const activeRoundMeta = scopedRoundMenus.find((r) => r.id === activeRound);
 
   const roundRows = React.useMemo(
-    () => (activeRound ? rows.filter((r) => r.roundId === activeRound) : rows),
-    [rows, activeRound]
+    () =>
+      activeRound
+        ? scopedRows.filter((r) => r.roundId === activeRound)
+        : scopedRows,
+    [scopedRows, activeRound]
   );
 
   const divisionGroups = React.useMemo(() => {
@@ -54,12 +97,11 @@ export function PublicDrawListings({
   const activeDivisionId =
     divisionId && divisionGroups.some((d) => d.id === divisionId)
       ? divisionId
-      : divisionGroups[0]?.id ?? null;
+      : (divisionGroups[0]?.id ?? null);
 
   const activeDivision = divisionGroups.find((d) => d.id === activeDivisionId);
   const divisionRows = activeDivision?.rows ?? [];
 
-  // Reset division selection when round changes
   React.useEffect(() => {
     setDivisionId(null);
   }, [activeRound]);
@@ -71,24 +113,35 @@ export function PublicDrawListings({
           Draws by round
         </div>
         <ul className="divide-y">
-          {roundMenus.length === 0 ? (
+          {scopedRoundMenus.length === 0 ? (
             <li className="px-3 py-4 text-sm text-muted-foreground">
               No published draws yet
             </li>
           ) : (
-            roundMenus.map((round) => {
+            scopedRoundMenus.map((round) => {
               const active = round.id === activeRound;
+              const className = cn(
+                "block w-full px-3 py-2 text-left text-sm hover:bg-muted/50",
+                active && "bg-muted font-medium text-foreground"
+              );
               return (
                 <li key={round.id}>
-                  <Link
-                    href={`/?round=${round.id}`}
-                    className={cn(
-                      "block px-3 py-2 text-sm hover:bg-muted/50",
-                      active && "bg-muted font-medium text-foreground"
-                    )}
-                  >
-                    {round.name}
-                  </Link>
+                  {roundBasePath != null ? (
+                    <Link
+                      href={roundHref(roundBasePath, round.id)}
+                      className={className}
+                    >
+                      {round.name}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      className={className}
+                      onClick={() => setLocalRound(round.id)}
+                    >
+                      {round.name}
+                    </button>
+                  )}
                 </li>
               );
             })
@@ -100,9 +153,12 @@ export function PublicDrawListings({
         <div className="space-y-4 rounded-lg border bg-card p-4 shadow-sm">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">
-              {activeRoundMeta?.name ?? "Public draw"}
+              {activeRoundMeta?.name ?? "Draw"}
             </h1>
             <p className="text-sm text-muted-foreground">
+              {lockedInstitutions?.length
+                ? `${lockedInstitutions.join(", ")} · `
+                : ""}
               {view === "venue"
                 ? `All divisions · ${roundRows.length} debate${roundRows.length === 1 ? "" : "s"}`
                 : activeDivision
@@ -166,7 +222,10 @@ export function PublicDrawListings({
             No published debates for this round
           </div>
         ) : view === "venue" ? (
-          <PublicDrawVenueView rows={roundRows} />
+          <PublicDrawVenueView
+            rows={roundRows}
+            lockedInstitutions={lockedInstitutions}
+          />
         ) : !activeDivision ? (
           <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
             No divisions in this round
@@ -176,6 +235,7 @@ export function PublicDrawListings({
             rows={divisionRows}
             ariaLabel={`${activeDivision.name} draw`}
             idPrefix={activeDivision.id}
+            hideInstitutionFilter={Boolean(lockedInstitutions?.length)}
           />
         )}
       </div>

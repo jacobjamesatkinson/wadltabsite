@@ -137,6 +137,7 @@ function DataTableHeader<TData extends RowData>({
         columnOrder: state.columnOrder,
         columnPinning: state.columnPinning,
         columnVisibility: state.columnVisibility,
+        rowSelection: state.rowSelection,
       })}
     >
       {() => (
@@ -252,6 +253,7 @@ function DataTableRowImpl<TData extends RowData>({
               key={cell.id}
               cell={cell}
               pinned={cell.column.getIsPinned()}
+              isSelected={isSelected}
             />
           ))}
         </TableRow>
@@ -263,6 +265,8 @@ function DataTableRowImpl<TData extends RowData>({
 interface DataTableCellProps<TData extends RowData> {
   cell: Cell<DataTableFeatures, TData>;
   pinned: ColumnPinningPosition;
+  /** Busts memo when row selection changes so select checkboxes update. */
+  isSelected?: boolean;
 }
 
 const DataTableCell = React.memo(DataTableCellImpl) as typeof DataTableCellImpl;

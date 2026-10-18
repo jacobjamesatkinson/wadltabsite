@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { deleteInstitutions } from "@/app/actions/institutions";
 import { EntityDataTable } from "@/components/data-table/entity-data-table";
 import { Badge } from "@/components/ui/badge";
 
@@ -18,6 +19,13 @@ export function InstitutionsTable({ rows }: { rows: InstitutionRow[] }) {
     <EntityDataTable
       data={rows}
       ariaLabel="Institutions"
+      enableRowSelection
+      bulkDelete={{
+        entityLabel: "institution",
+        onDelete: async (ids) => {
+          await deleteInstitutions(ids);
+        },
+      }}
       columns={[
         {
           id: "name",

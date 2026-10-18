@@ -13,7 +13,7 @@ export default async function VenuesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Venues and rooms"
-        description="Physical venues used for competition nights"
+        description="Physical venues and their two-week roster night"
         actions={<VenueForm />}
       />
       <VenuesTable
@@ -22,6 +22,7 @@ export default async function VenuesPage() {
           name: v.name,
           address: v.address,
           status: v.status,
+          rosterDay: v.rosterDay,
         }))}
         rooms={roomRows.map((r) => {
           const venue = venueRows.find((v) => v.id === r.venueId);
@@ -30,9 +31,7 @@ export default async function VenuesPage() {
             venueId: r.venueId,
             venueName: venue?.name ?? "—",
             room: r.identifier,
-            capacity: r.capacity != null ? String(r.capacity) : "—",
             available: r.available ? "Yes" : "No",
-            capacityValue: r.capacity,
             availableValue: r.available,
             identifier: r.identifier,
           };

@@ -1,70 +1,76 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 import { toast } from "sonner";
-import {
-  publishRoundDraw,
-  revisePublishedDraw,
-} from "@/app/actions/draws";
+import { releaseDraw, unreleaseDraw } from "@/app/actions/draws";
 import { Button } from "@/components/ui/button";
 
 export function DisplayActions({
   roundId,
   drawStatus,
-  hasHard,
-  hasDraft,
+  blockers,
 }: {
   roundId: string;
-  drawStatus: string;
-  hasHard: boolean;
-  hasDraft: boolean;
+  drawStatus: "none" | "draft" | "published";
+  blockers: string[];
 }) {
   const router = useRouter();
-  const [loading, setLoading] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
 
-  async function run(label: string, fn: () => Promise<unknown>) {
-    setLoading(label);
-    try {
-      await fn();
-      toast.success(`${label} complete`);
-      router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
-    } finally {
-      setLoading(null);
-    }
+  const run = (label: string, fn: () => Promise<unknown>) =>
+    startTransition(async () => {
+      try {
+        await fn();
+        toast.success(label);
+        router.refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed");
+      }
+    });
+
+  if (drawStatus === "none") {
+    return (
+      <div className="flex flex-wrap items-center gap-3 border p-5">
+        <p className="text-sm text-muted-foreground">There is no draw to release yet.</p>
+        <Button render={<Link href={`/admin/rounds/${roundId}/draw`} />}>Create draw</Button>
+      </div>
+    );
+  }
+
+  if (drawStatus === "published") {
+    return (
+      <div className="flex flex-wrap items-center gap-3 border p-5">
+        <p className="w-full text-sm text-muted-foreground">
+          The draw is live on the public board and in coordinator and adjudicator dashboards.
+          Unrelease to hide it while you make changes, or edit matchups and allocations directly.
+        </p>
+        <Button variant="outline" disabled={pending} onClick={() => run("Draw unreleased", () => unreleaseDraw(roundId))}>
+          {pending ? "Working…" : "Unrelease draw"}
+        </Button>
+        <Button variant="destructive" render={<Link href={`/admin/rounds/${roundId}/draw/delete`} />}>
+          Delete draw
+        </Button>
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-wrap gap-2 border p-5">
-      {drawStatus === "published" ? (
-        <>
-          <p className="w-full text-sm text-muted-foreground">
-            Draw is live on the public board. Revise to edit and re-release.
-          </p>
-          <Button
-            variant="outline"
-            disabled={!!loading}
-            onClick={() => run("Revise", () => revisePublishedDraw(roundId))}
-          >
-            {loading === "Revise" ? "Working…" : "Revise published draw"}
-          </Button>
-        </>
-      ) : (
-        <>
-          <p className="w-full text-sm text-muted-foreground">
-            Publishing releases the current draft to the public draw and
-            coordinator views.
-          </p>
-          <Button
-            disabled={!!loading || hasHard || !hasDraft}
-            onClick={() => run("Release", () => publishRoundDraw(roundId))}
-          >
-            {loading === "Release" ? "Releasing…" : "Release draw"}
-          </Button>
-        </>
-      )}
+    <div className="space-y-3 border p-5">
+      <p className="text-sm text-muted-foreground">
+        Releasing makes the draw visible to teams, coordinators and adjudicators.
+      </p>
+      {blockers.length > 0 ? (
+        <ul className="list-inside list-disc text-sm text-destructive">
+          {blockers.map((b) => (
+            <li key={b}>{b}</li>
+          ))}
+        </ul>
+      ) : null}
+      <Button disabled={pending || blockers.length > 0} onClick={() => run("Draw released", () => releaseDraw(roundId))}>
+        {pending ? "Releasing…" : "Release draw"}
+      </Button>
     </div>
   );
 }

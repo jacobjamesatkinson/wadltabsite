@@ -4,7 +4,16 @@ import { revalidatePath } from "next/cache";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { speakers, teamAccessTokens, teams } from "@/db/schema";
+import {
+  ballots,
+  byes,
+  debates,
+  speakerDeletionRequests,
+  speakerScores,
+  speakers,
+  teamAccessTokens,
+  teams,
+} from "@/db/schema";
 import { writeAudit } from "@/lib/audit";
 import { getAuthContext } from "@/lib/auth/session";
 import { createId } from "@/lib/id";
@@ -20,6 +29,8 @@ const teamSchema = z.object({
   competitionId: z.string(),
   institutionId: z.string().nullable().optional(),
   divisionId: z.string().optional().nullable(),
+  venueId: z.string().nullable().optional(),
+  timeslotId: z.string().nullable().optional(),
   name: z.string().min(1),
   identifier: z.string().optional(),
   status: z.string().optional(),
@@ -71,12 +82,14 @@ export async function updateTeam(id: string, input: z.infer<typeof teamSchema>) 
   const fields = await resolveTeamFields(data);
   assertTeamAccess(ctx, fields.institutionId);
 
+  // Division is permanent after creation — ignore any attempted change.
   await db
     .update(teams)
     .set({
       competitionId: data.competitionId,
       institutionId: fields.institutionId,
-      divisionId: data.divisionId ?? null,
+      venueId: data.venueId ?? null,
+      timeslotId: data.timeslotId ?? null,
       name: fields.name,
       identifier: fields.identifier,
       status: data.status ?? team.status,
@@ -88,7 +101,11 @@ export async function updateTeam(id: string, input: z.infer<typeof teamSchema>) 
     action: "team.update",
     entityType: "team",
     entityId: id,
-    details: { ...data, ...fields },
+    details: {
+      ...data,
+      ...fields,
+      divisionId: team.divisionId,
+    },
   });
   revalidatePath("/admin/teams");
   revalidatePath(`/admin/teams/${id}`);
@@ -106,10 +123,7 @@ export async function deleteTeam(id: string) {
   if (!team) throw new Error("NOT_FOUND");
 
   assertTeamAccess(ctx, team.institutionId);
-
-  await db.delete(speakers).where(eq(speakers.teamId, id));
-  await db.delete(teamAccessTokens).where(eq(teamAccessTokens.teamId, id));
-  await db.delete(teams).where(eq(teams.id, id));
+  await purgeTeam(id);
   await writeAudit({
     actorId: ctx.userId,
     action: "team.delete",
@@ -120,19 +134,80 @@ export async function deleteTeam(id: string) {
   revalidatePath("/coordinator/teams");
 }
 
+async function purgeTeam(id: string) {
+  await db
+    .update(ballots)
+    .set({ winnerTeamId: null })
+    .where(eq(ballots.winnerTeamId, id));
+  await db
+    .update(debates)
+    .set({ affirmativeTeamId: null })
+    .where(eq(debates.affirmativeTeamId, id));
+  await db
+    .update(debates)
+    .set({ negativeTeamId: null })
+    .where(eq(debates.negativeTeamId, id));
+  await db.delete(byes).where(eq(byes.teamId, id));
+  await db.delete(speakers).where(eq(speakers.teamId, id));
+  await db.delete(teamAccessTokens).where(eq(teamAccessTokens.teamId, id));
+  await db.delete(teams).where(eq(teams.id, id));
+}
+
+export async function deleteTeams(ids: string[]) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return { deleted: 0 };
+
+  let deleted = 0;
+  for (const id of unique) {
+    const team = await db.query.teams.findFirst({
+      where: (t, { eq: e }) => e(t.id, id),
+    });
+    if (!team) continue;
+    assertTeamAccess(ctx, team.institutionId);
+    await purgeTeam(id);
+    await writeAudit({
+      actorId: ctx.userId,
+      action: "team.delete",
+      entityType: "team",
+      entityId: id,
+      details: { via: "bulk" },
+    });
+    deleted += 1;
+  }
+  if (deleted === 0) {
+    throw new Error("No teams were deleted — selection may be stale");
+  }
+  revalidatePath("/admin/teams");
+  revalidatePath("/coordinator/teams");
+  return { deleted };
+}
+
 export async function createTeam(input: z.infer<typeof teamSchema>) {
   const ctx = await getAuthContext();
   if (!ctx) throw new Error("UNAUTHORIZED");
   const data = teamSchema.parse(input);
+  if (!data.divisionId) throw new Error("Division is required");
   const fields = await resolveTeamFields(data);
   assertTeamAccess(ctx, fields.institutionId);
+
+  const division = await db.query.divisions.findFirst({
+    where: (t, { eq: e }) => e(t.id, data.divisionId!),
+  });
+  if (!division || division.competitionId !== data.competitionId) {
+    throw new Error("Invalid division");
+  }
 
   const id = createId("team");
   await db.insert(teams).values({
     id,
     competitionId: data.competitionId,
     institutionId: fields.institutionId,
-    divisionId: data.divisionId ?? null,
+    divisionId: data.divisionId,
+    venueId: data.venueId ?? null,
+    timeslotId: data.timeslotId ?? null,
     name: fields.name,
     identifier: fields.identifier,
   });
@@ -145,6 +220,9 @@ export async function createTeam(input: z.infer<typeof teamSchema>) {
   });
   revalidatePath("/admin/teams");
   revalidatePath("/coordinator/teams");
+  if (fields.institutionId) {
+    revalidatePath(`/admin/institutions/${fields.institutionId}`);
+  }
   return { id };
 }
 
@@ -274,6 +352,37 @@ export async function getOrCreateTeamAccessLink(
   };
 }
 
+/** Create private URLs for every team that does not already have an active link. */
+export async function generateAllTeamAccessLinks(): Promise<{
+  created: number;
+  existing: number;
+  total: number;
+}> {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "teams:manage_all");
+
+  const allTeams = await db.select({ id: teams.id }).from(teams);
+  let created = 0;
+  let existing = 0;
+  for (const team of allTeams) {
+    const result = await getOrCreateTeamAccessLink(team.id, true);
+    if (result.created) created += 1;
+    else existing += 1;
+  }
+
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "team_token.generate_all",
+    entityType: "team_access_token",
+    entityId: "bulk",
+    details: { created, existing, total: allTeams.length },
+  });
+  revalidatePath("/admin/teams");
+  revalidatePath("/admin/settings");
+  return { created, existing, total: allTeams.length };
+}
+
 /** Explicitly revoke the current link and issue a new one. */
 export async function regenerateTeamAccessLink(
   teamId: string,
@@ -319,6 +428,14 @@ export async function createTeamAccessLink(
   return regenerateTeamAccessLink(teamId, canEditSpeakers);
 }
 
+function revalidateTeamPortal(rawToken: string, teamId: string) {
+  revalidatePath(`/team/${rawToken}`);
+  revalidatePath(`/team/${rawToken}/draw`);
+  revalidatePath(`/team/${rawToken}/speakers`);
+  revalidatePath(`/team/${rawToken}/results`);
+  revalidatePath(`/admin/teams/${teamId}`);
+}
+
 export async function studentAddSpeaker(rawToken: string, name: string) {
   const token = await db.query.teamAccessTokens.findFirst({
     where: (t, { eq: e }) => e(t.tokenHash, hashToken(rawToken)),
@@ -326,19 +443,29 @@ export async function studentAddSpeaker(rawToken: string, name: string) {
   if (!token || token.revokedAt) throw new Error("INVALID_TOKEN");
   if (!token.canEditSpeakers) throw new Error("FORBIDDEN");
 
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Speaker name required");
+
   const id = createId("spk");
-  await db.insert(speakers).values({ id, teamId: token.teamId, name });
+  await db.insert(speakers).values({ id, teamId: token.teamId, name: trimmed });
   await writeAudit({
     action: "speaker.create.student",
     entityType: "speaker",
     entityId: id,
     details: { teamId: token.teamId, via: "token" },
   });
-  revalidatePath(`/team/${rawToken}`);
+  revalidateTeamPortal(rawToken, token.teamId);
   return { id };
 }
 
-export async function studentRemoveSpeaker(rawToken: string, speakerId: string) {
+/**
+ * Remove a speaker immediately if they have never appeared on a ballot.
+ * Otherwise create a pending deletion request for admin approval.
+ */
+export async function studentRemoveOrRequestSpeakerDeletion(
+  rawToken: string,
+  speakerId: string
+): Promise<{ mode: "deleted" | "requested" }> {
   const token = await db.query.teamAccessTokens.findFirst({
     where: (t, { eq: e }) => e(t.tokenHash, hashToken(rawToken)),
   });
@@ -350,12 +477,114 @@ export async function studentRemoveSpeaker(rawToken: string, speakerId: string) 
   });
   if (!speaker || speaker.teamId !== token.teamId) throw new Error("FORBIDDEN");
 
+  const [onBallot] = await db
+    .select({ id: speakerScores.id })
+    .from(speakerScores)
+    .where(eq(speakerScores.speakerId, speakerId))
+    .limit(1);
+
+  if (!onBallot) {
+    await db
+      .delete(speakerDeletionRequests)
+      .where(eq(speakerDeletionRequests.speakerId, speakerId));
+    await db.delete(speakers).where(eq(speakers.id, speakerId));
+    await writeAudit({
+      action: "speaker.delete.student",
+      entityType: "speaker",
+      entityId: speakerId,
+      details: { teamId: token.teamId, via: "token" },
+    });
+    revalidateTeamPortal(rawToken, token.teamId);
+    return { mode: "deleted" };
+  }
+
+  const [existing] = await db
+    .select()
+    .from(speakerDeletionRequests)
+    .where(
+      and(
+        eq(speakerDeletionRequests.speakerId, speakerId),
+        eq(speakerDeletionRequests.status, "pending")
+      )
+    )
+    .limit(1);
+  if (existing) {
+    throw new Error("A deletion request is already pending for this speaker");
+  }
+
+  const id = createId("sdel");
+  await db.insert(speakerDeletionRequests).values({
+    id,
+    speakerId,
+    teamId: token.teamId,
+    status: "pending",
+  });
+  await writeAudit({
+    action: "speaker.delete.request",
+    entityType: "speaker_deletion_request",
+    entityId: id,
+    details: { teamId: token.teamId, speakerId, via: "token" },
+  });
+  revalidateTeamPortal(rawToken, token.teamId);
+  return { mode: "requested" };
+}
+
+/** @deprecated Prefer studentRemoveOrRequestSpeakerDeletion */
+export async function studentRemoveSpeaker(rawToken: string, speakerId: string) {
+  await studentRemoveOrRequestSpeakerDeletion(rawToken, speakerId);
+}
+
+export async function approveSpeakerDeletion(requestId: string) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "teams:manage_all");
+
+  const request = await db.query.speakerDeletionRequests.findFirst({
+    where: (t, { eq: e }) => e(t.id, requestId),
+  });
+  if (!request) throw new Error("NOT_FOUND");
+  if (request.status !== "pending") throw new Error("Request is not pending");
+
+  const { speakerId, teamId } = request;
+  // Deleting the speaker cascades the request row; audit keeps the decision.
   await db.delete(speakers).where(eq(speakers.id, speakerId));
   await writeAudit({
-    action: "speaker.delete.student",
+    actorId: ctx.userId,
+    action: "speaker.delete.approve",
     entityType: "speaker",
     entityId: speakerId,
-    details: { teamId: token.teamId, via: "token" },
+    details: { teamId, requestId },
   });
-  revalidatePath(`/team/${rawToken}`);
+  revalidatePath(`/admin/teams/${teamId}`);
+  revalidatePath("/admin/teams");
+}
+
+export async function rejectSpeakerDeletion(requestId: string) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  requirePermission(ctx, "teams:manage_all");
+
+  const request = await db.query.speakerDeletionRequests.findFirst({
+    where: (t, { eq: e }) => e(t.id, requestId),
+  });
+  if (!request) throw new Error("NOT_FOUND");
+  if (request.status !== "pending") throw new Error("Request is not pending");
+
+  await db
+    .update(speakerDeletionRequests)
+    .set({
+      status: "rejected",
+      decidedBy: ctx.userId,
+      decidedAt: new Date(),
+    })
+    .where(eq(speakerDeletionRequests.id, requestId));
+  await writeAudit({
+    actorId: ctx.userId,
+    action: "speaker.delete.reject",
+    entityType: "speaker_deletion_request",
+    entityId: requestId,
+    details: { speakerId: request.speakerId, teamId: request.teamId },
+  });
+  revalidatePath(`/admin/teams/${request.teamId}`);
+  revalidatePath("/admin/teams");
 }

@@ -1,21 +1,21 @@
 "use server";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import {
   adjudicatorAvailability,
   adjudicatorProfiles,
+  competitionTimeslots,
   roomAvailability,
   rooms,
   teamAvailability,
   teams,
-  timeslots,
   user,
 } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth/session";
 import { createId } from "@/lib/id";
-import { requirePermission } from "@/lib/permissions";
+import { hasPermission, requirePermission } from "@/lib/permissions";
 
 export async function setTeamAvailability(
   roundId: string,
@@ -87,6 +87,59 @@ export async function setRoomAvailability(
   revalidatePath(`/admin/rounds/${roundId}/draw`);
 }
 
+async function roundTimeslots(roundId: string) {
+  const round = await db.query.rounds.findFirst({
+    where: (t, { eq: e }) => e(t.id, roundId),
+  });
+  if (!round) throw new Error("NOT_FOUND");
+  return db
+    .select()
+    .from(competitionTimeslots)
+    .where(eq(competitionTimeslots.competitionId, round.competitionId))
+    .orderBy(asc(competitionTimeslots.sortOrder), asc(competitionTimeslots.startsAt));
+}
+
+/** Set adjudicator availability for one round + competition timeslot. */
+export async function setAdjudicatorTimeslotAvailability(
+  roundId: string,
+  adjudicatorId: string,
+  timeslotId: string,
+  available: boolean
+) {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new Error("UNAUTHORIZED");
+  const profile = await db.query.adjudicatorProfiles.findFirst({
+    where: (t, { eq: e }) => e(t.id, adjudicatorId),
+  });
+  if (!profile) throw new Error("NOT_FOUND");
+  if (profile.userId !== ctx.userId && !hasPermission(ctx, "adjudicators:manage")) {
+    throw new Error("FORBIDDEN");
+  }
+
+  const existing = await db.query.adjudicatorAvailability.findFirst({
+    where: (t, { and: a, eq: e }) =>
+      a(e(t.adjudicatorId, adjudicatorId), e(t.roundId, roundId), e(t.timeslotId, timeslotId)),
+  });
+  if (existing) {
+    await db
+      .update(adjudicatorAvailability)
+      .set({ available })
+      .where(eq(adjudicatorAvailability.id, existing.id));
+  } else {
+    await db.insert(adjudicatorAvailability).values({
+      id: createId("aav"),
+      adjudicatorId,
+      roundId,
+      timeslotId,
+      available,
+    });
+  }
+
+  revalidatePath(`/admin/rounds/${roundId}/availability`);
+  revalidatePath(`/admin/rounds/${roundId}/adjudicators`);
+  revalidatePath("/adjudicator/availability");
+}
+
 /** Toggle adjudicator availability for every timeslot in the round. */
 export async function setAdjudicatorRoundAvailability(
   roundId: string,
@@ -97,32 +150,10 @@ export async function setAdjudicatorRoundAvailability(
   if (!ctx) throw new Error("UNAUTHORIZED");
   requirePermission(ctx, "adjudicators:manage");
 
-  const slots = await db
-    .select()
-    .from(timeslots)
-    .where(eq(timeslots.roundId, roundId));
-
+  const slots = await roundTimeslots(roundId);
   for (const slot of slots) {
-    const rows = await db
-      .select()
-      .from(adjudicatorAvailability)
-      .where(eq(adjudicatorAvailability.timeslotId, slot.id));
-    const existing = rows.find((r) => r.adjudicatorId === adjudicatorId);
-    if (existing) {
-      await db
-        .update(adjudicatorAvailability)
-        .set({ available })
-        .where(eq(adjudicatorAvailability.id, existing.id));
-    } else {
-      await db.insert(adjudicatorAvailability).values({
-        id: createId("aav"),
-        adjudicatorId,
-        timeslotId: slot.id,
-        available,
-      });
-    }
+    await setAdjudicatorTimeslotAvailability(roundId, adjudicatorId, slot.id, available);
   }
-
   revalidatePath(`/admin/rounds/${roundId}/availability`);
 }
 
@@ -137,12 +168,6 @@ export async function loadRoundAvailability(roundId: string): Promise<{
   rooms: AvailabilityItem[];
   adjudicators: AvailabilityItem[];
 }> {
-  const slots = await db
-    .select()
-    .from(timeslots)
-    .where(eq(timeslots.roundId, roundId));
-  const slotIds = slots.map((s) => s.id);
-
   const [teamRows, roomRows, adjRows, users, teamAvail, roomAvail, adjAvail] =
     await Promise.all([
       db.select().from(teams).where(eq(teams.status, "active")),
@@ -151,12 +176,10 @@ export async function loadRoundAvailability(roundId: string): Promise<{
       db.select({ id: user.id, name: user.name }).from(user),
       db.select().from(teamAvailability).where(eq(teamAvailability.roundId, roundId)),
       db.select().from(roomAvailability).where(eq(roomAvailability.roundId, roundId)),
-      slotIds.length
-        ? db
-            .select()
-            .from(adjudicatorAvailability)
-            .where(inArray(adjudicatorAvailability.timeslotId, slotIds))
-        : Promise.resolve([]),
+      db
+        .select()
+        .from(adjudicatorAvailability)
+        .where(and(eq(adjudicatorAvailability.roundId, roundId))),
     ]);
 
   const userName = new Map(users.map((u) => [u.id, u.name]));

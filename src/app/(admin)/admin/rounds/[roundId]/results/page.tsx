@@ -1,17 +1,10 @@
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { db } from "@/db";
-import {
-  adjudicatorAssignments,
-  adjudicatorProfiles,
-  ballots,
-  debates,
-  rooms,
-  user,
-} from "@/db/schema";
+import { ballots, user } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
+import { loadDrawView } from "@/lib/draw/view";
 import { RoundStepNav } from "../round-step-nav";
-import { AddBallotDialog } from "./add-ballot-dialog";
 import { ResultsDataTable, type ResultsRow } from "./results-table";
 
 export default async function RoundResultsPage({
@@ -25,100 +18,63 @@ export default async function RoundResultsPage({
   });
   if (!round) notFound();
 
-  const [debateRows, roomRows, ballotRows, assignmentRows, adjProfiles, users] =
-    await Promise.all([
-      db.select().from(debates).where(eq(debates.roundId, roundId)),
-      db.select().from(rooms),
-      db.select().from(ballots),
-      db.select().from(adjudicatorAssignments),
-      db.select().from(adjudicatorProfiles),
-      db.select({ id: user.id, name: user.name }).from(user),
-    ]);
-
-  const roomMap = new Map(roomRows.map((r) => [r.id, r.identifier]));
+  const view = round.drawStatus === "none" ? null : await loadDrawView(roundId);
+  const debates = view?.debates ?? [];
+  const debateIds = debates.map((d) => d.id);
+  const [ballotRows, users] = await Promise.all([
+    debateIds.length ? db.select().from(ballots).where(inArray(ballots.debateId, debateIds)) : Promise.resolve([]),
+    db.select({ id: user.id, name: user.name }).from(user),
+  ]);
   const userName = new Map(users.map((u) => [u.id, u.name]));
-  const adjName = new Map(
-    adjProfiles.map((a) => [a.id, userName.get(a.userId) ?? a.id])
-  );
+  const adjNameById = new Map<string, string>();
+  for (const d of debates) for (const a of d.adjudicators) adjNameById.set(a.id, a.name);
 
-  const ballotsByDebate = new Map<string, (typeof ballotRows)[number][]>();
-  for (const b of ballotRows) {
-    const list = ballotsByDebate.get(b.debateId) ?? [];
-    list.push(b);
-    ballotsByDebate.set(b.debateId, list);
-  }
-
-  const assignmentsByDebate = new Map<string, string[]>();
-  for (const a of assignmentRows) {
-    const list = assignmentsByDebate.get(a.debateId) ?? [];
-    list.push(adjName.get(a.adjudicatorId) ?? a.adjudicatorId);
-    assignmentsByDebate.set(a.debateId, list);
-  }
-
-  const rows: ResultsRow[] = debateRows.map((d) => {
-    const debateBallots = (ballotsByDebate.get(d.id) ?? []).sort(
-      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
-    );
-    const latest = debateBallots[0];
-    const enteredBy = latest
-      ? latest.adjudicatorId
-        ? adjName.get(latest.adjudicatorId) ??
-          userName.get(latest.submittedByUserId ?? "") ??
-          "Adjudicator"
-        : userName.get(latest.submittedByUserId ?? "") ?? "Admin"
+  const rows: ResultsRow[] = debates.map((d) => {
+    const mine = ballotRows.filter((b) => b.debateId === d.id).sort((a, b) => b.version - a.version);
+    const live = mine.find((b) => !b.discarded && b.status === "accepted") ?? mine.find((b) => !b.discarded && b.status === "submitted") ?? null;
+    const status: ResultsRow["status"] = !live ? "none" : live.status === "accepted" ? "confirmed" : "unconfirmed";
+    const enteredBy = live
+      ? (live.adjudicatorId ? adjNameById.get(live.adjudicatorId) : null) ?? userName.get(live.submittedByUserId ?? "") ?? "—"
       : "—";
-    const enteredAt = latest
-      ? latest.createdAt.toLocaleTimeString("en-AU", {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "";
     let winnerSide: ResultsRow["winnerSide"] = "none";
-    if (latest?.winnerTeamId) {
-      if (latest.winnerTeamId === d.affirmativeTeamId) winnerSide = "aff";
-      else if (latest.winnerTeamId === d.negativeTeamId) winnerSide = "neg";
+    if (live?.winnerTeamId) {
+      if (live.winnerTeamId === d.affirmative?.id) winnerSide = "aff";
+      else if (live.winnerTeamId === d.negative?.id) winnerSide = "neg";
     }
-
     return {
       id: d.id,
-      status: latest?.status ?? "pending",
-      ballotLabel: latest
-        ? latest.status === "accepted"
-          ? `Accepted v${debateBallots.length}`
-          : `Re-Edit v${debateBallots.length}`
-        : "Add ballot",
+      roundId,
+      status,
+      version: live?.version ?? null,
+      versions: mine.length,
       enteredBy,
-      enteredAt,
-      room: d.roomId ? roomMap.get(d.roomId) ?? "—" : "—",
-      affirmative: d.affirmativeTeamName ?? "—",
-      negative: d.negativeTeamName ?? "—",
+      enteredAt: live ? live.createdAt.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" }) : "",
+      confirmedBy: live?.confirmedBy ? userName.get(live.confirmedBy) ?? null : null,
+      venue: d.venueName,
+      timeslot: d.timeslotLabel,
+      room: d.roomLabel || "—",
+      affirmative: d.affirmative?.name ?? "Missing",
+      negative: d.negative?.name ?? "Missing",
+      incomplete: !d.affirmative || !d.negative,
       winnerSide,
-      adjudicators: (assignmentsByDebate.get(d.id) ?? []).join(", ") || "—",
-      score: latest
-        ? `${latest.affirmativePoints ?? "—"}–${latest.negativePoints ?? "—"}`
-        : "—",
-      reviewBallotId:
-        latest && (latest.status === "submitted" || latest.status === "disputed")
-          ? latest.id
-          : null,
+      adjudicators: d.adjudicators.map((a) => a.name).join(", ") || "—",
+      score: live ? `${live.affirmativePoints ?? "—"}–${live.negativePoints ?? "—"}` : "—",
+      ballotId: live?.id ?? null,
     };
   });
+
+  const confirmed = rows.filter((r) => r.status === "confirmed").length;
+  const unconfirmed = rows.filter((r) => r.status === "unconfirmed").length;
 
   return (
     <div className="space-y-6">
       <RoundStepNav roundId={roundId} roundName={round.name} current="results" />
       <PageHeader
         title="Results"
-        description="Enter and review ballots. Adjudicator submissions show the adjudicator’s name."
-        actions={
-          <AddBallotDialog
-            debates={debateRows.map((d) => ({
-              id: d.id,
-              label: `${d.affirmativeTeamName ?? "Aff"} vs ${d.negativeTeamName ?? "Neg"}`,
-              affirmativeTeamId: d.affirmativeTeamId,
-              negativeTeamId: d.negativeTeamId,
-            }))}
-          />
+        description={
+          rows.length
+            ? `${confirmed} of ${rows.length} confirmed${unconfirmed ? ` · ${unconfirmed} awaiting confirmation` : ""}. Enter a ballot per debate; a second person confirms it.`
+            : "Create and release the draw before entering results."
         }
       />
       <ResultsDataTable data={rows} />

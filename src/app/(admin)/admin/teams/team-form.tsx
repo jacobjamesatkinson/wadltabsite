@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createTeam, updateTeam } from "@/app/actions/teams";
 import { formatTeamDisplayName } from "@/lib/teams/display-name";
+import { formatTimeslotTime } from "@/lib/timeslots/format";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,38 +18,54 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 type TeamFormProps = {
-  competitions: Array<{ id: string; name: string }>;
+  competitionId: string;
   institutions: Array<{ id: string; name: string; shortName: string }>;
-  divisions: Array<{ id: string; name: string; competitionId: string }>;
+  divisions: Array<{ id: string; name: string }>;
+  venues: Array<{ id: string; name: string }>;
+  timeslots: Array<{ id: string; startsAt: string }>;
+  /** Pre-select institution when creating (ignored when editing). */
+  defaultInstitutionId?: string;
+  /** Hide the institution picker and keep the selected institution fixed. */
+  lockInstitution?: boolean;
+  triggerSize?: "default" | "sm";
   team?: {
     id: string;
     competitionId: string;
     institutionId: string | null;
     divisionId: string | null;
+    venueId: string | null;
+    timeslotId: string | null;
     name: string;
     identifier: string;
     status: string;
   };
 };
 
-export function TeamForm({ competitions, institutions, divisions, team }: TeamFormProps) {
+export function TeamForm({
+  competitionId,
+  institutions,
+  divisions,
+  venues,
+  timeslots,
+  defaultInstitutionId,
+  lockInstitution = false,
+  triggerSize,
+  team,
+}: TeamFormProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [competitionId, setCompetitionId] = useState(
-    team?.competitionId ?? competitions[0]?.id ?? ""
-  );
-  const [institutionId, setInstitutionId] = useState(team?.institutionId ?? "");
+  const initialInstitutionId =
+    team?.institutionId ?? defaultInstitutionId ?? "";
+  const [institutionId, setInstitutionId] = useState(initialInstitutionId);
   const [divisionId, setDivisionId] = useState(team?.divisionId ?? "");
+  const [venueId, setVenueId] = useState(team?.venueId ?? "");
+  const [timeslotId, setTimeslotId] = useState(team?.timeslotId ?? "");
   const [name, setName] = useState(team?.name ?? "");
   const [identifier, setIdentifier] = useState(team?.identifier ?? "");
   const [status, setStatus] = useState(team?.status ?? "active");
   const [loading, setLoading] = useState(false);
   const editing = Boolean(team);
-
-  const filteredDivisions = useMemo(
-    () => divisions.filter((d) => d.competitionId === competitionId),
-    [divisions, competitionId]
-  );
+  const buttonSize = triggerSize ?? (editing ? "sm" : "default");
 
   const selectedInstitution = institutions.find((i) => i.id === institutionId);
   const bound = Boolean(institutionId);
@@ -56,25 +73,40 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
     { name: name || "?", institutionId: institutionId || null },
     selectedInstitution
   );
+  const lockedDivisionName =
+    divisions.find((d) => d.id === divisionId)?.name ?? "—";
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next && team) {
-          setCompetitionId(team.competitionId);
+        if (!next) return;
+        if (team) {
           setInstitutionId(team.institutionId ?? "");
           setDivisionId(team.divisionId ?? "");
+          setVenueId(team.venueId ?? "");
+          setTimeslotId(team.timeslotId ?? "");
           setName(team.name);
           setIdentifier(team.identifier);
           setStatus(team.status);
+        } else {
+          setInstitutionId(defaultInstitutionId ?? "");
+          setDivisionId("");
+          setVenueId("");
+          setTimeslotId("");
+          setName("");
+          setIdentifier("");
+          setStatus("active");
         }
       }}
     >
       <DialogTrigger
         render={
-          <Button size={editing ? "sm" : "default"} variant={editing ? "outline" : "default"} />
+          <Button
+            size={buttonSize}
+            variant={editing ? "outline" : "default"}
+          />
         }
       >
         {editing ? "Edit" : "Add team"}
@@ -93,6 +125,8 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
                 competitionId,
                 institutionId: institutionId || null,
                 divisionId: divisionId || null,
+                venueId: venueId || null,
+                timeslotId: timeslotId || null,
                 name,
                 identifier: bound ? undefined : identifier,
                 status: editing ? status : undefined,
@@ -113,48 +147,84 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
             }
           }}
         >
-          {competitions.length > 1 ? (
-            <div className="space-y-1">
-              <Label>Competition</Label>
+          <div className="space-y-1">
+            <Label>Institution</Label>
+            {lockInstitution ? (
+              <Input
+                value={
+                  selectedInstitution
+                    ? `${selectedInstitution.name} (${selectedInstitution.shortName})`
+                    : "—"
+                }
+                disabled
+                readOnly
+              />
+            ) : (
               <select
                 className="flex h-8 w-full rounded-lg border px-2 text-sm"
-                value={competitionId}
-                onChange={(e) => setCompetitionId(e.target.value)}
+                value={institutionId}
+                onChange={(e) => setInstitutionId(e.target.value)}
               >
-                {competitions.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
+                <option value="">None (independent team)</option>
+                {institutions.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name} ({i.shortName})
                   </option>
                 ))}
               </select>
-            </div>
-          ) : null}
+            )}
+          </div>
           <div className="space-y-1">
-            <Label>Institution</Label>
+            <Label>Division</Label>
+            {editing ? (
+              <>
+                <Input value={lockedDivisionName} disabled readOnly />
+                <p className="text-xs text-muted-foreground">
+                  Division is set at creation and cannot change
+                </p>
+              </>
+            ) : (
+              <select
+                className="flex h-8 w-full rounded-lg border px-2 text-sm"
+                value={divisionId}
+                onChange={(e) => setDivisionId(e.target.value)}
+                required
+              >
+                <option value="">Select division…</option>
+                {divisions.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="space-y-1">
+            <Label>Venue</Label>
             <select
               className="flex h-8 w-full rounded-lg border px-2 text-sm"
-              value={institutionId}
-              onChange={(e) => setInstitutionId(e.target.value)}
+              value={venueId}
+              onChange={(e) => setVenueId(e.target.value)}
             >
-              <option value="">None (independent team)</option>
-              {institutions.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name} ({i.shortName})
+              <option value="">Unassigned</option>
+              {venues.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
                 </option>
               ))}
             </select>
           </div>
           <div className="space-y-1">
-            <Label>Division</Label>
+            <Label>Timeslot</Label>
             <select
               className="flex h-8 w-full rounded-lg border px-2 text-sm"
-              value={divisionId}
-              onChange={(e) => setDivisionId(e.target.value)}
+              value={timeslotId}
+              onChange={(e) => setTimeslotId(e.target.value)}
             >
-              <option value="">—</option>
-              {filteredDivisions.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
+              <option value="">Unassigned</option>
+              {timeslots.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {formatTimeslotTime(t.startsAt)}
                 </option>
               ))}
             </select>
@@ -207,7 +277,7 @@ export function TeamForm({ competitions, institutions, divisions, team }: TeamFo
               </select>
             </div>
           ) : null}
-          <Button type="submit" disabled={loading}>
+          <Button type="submit" disabled={loading || (!editing && !divisionId)}>
             {loading ? "Saving…" : editing ? "Save" : "Create"}
           </Button>
         </form>

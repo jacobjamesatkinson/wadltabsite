@@ -33,12 +33,64 @@ export const ballotStatusEnum = pgEnum("ballot_status", [
   "disputed",
   "amended",
 ]);
+export const speakerDeletionStatusEnum = pgEnum("speaker_deletion_status", [
+  "pending",
+  "approved",
+  "rejected",
+]);
+
 export const postponementStatusEnum = pgEnum("postponement_status", [
   "pending",
   "approved",
   "rejected",
   "withdrawn",
 ]);
+/** Tabbycat-modelled draw generator options. */
+export type DrawType = "power_paired" | "random" | "round_robin" | "manual";
+export type OddBracketMethod =
+  | "pullup_top"
+  | "pullup_bottom"
+  | "pullup_middle"
+  | "pullup_random"
+  | "intermediate"
+  | "intermediate_bubble_up_down";
+export type PairingMethod =
+  | "slide"
+  | "fold"
+  | "adjacent"
+  | "random"
+  | "fold_top_adjacent_rest";
+export type ConflictAvoidance = "off" | "one_up_one_down";
+export type SideAllocation = "random" | "balance";
+export type PullupRestriction =
+  | "none"
+  | "least_to_date"
+  | "lowest_ds_wins"
+  | "lowest_ds_speaks";
+
+export type DrawOptions = {
+  type: DrawType;
+  oddBracket: OddBracketMethod;
+  pairingMethod: PairingMethod;
+  conflictAvoidance: ConflictAvoidance;
+  sideAllocation: SideAllocation;
+  pullupRestriction: PullupRestriction;
+  avoidHistory: boolean;
+  avoidSameInstitution: boolean;
+  byeCountsAsWin: boolean;
+  /** Draw type used when no team has any results yet. */
+  firstRoundType: "random";
+};
+
+export type ScoreConfig = {
+  speakersPerTeam: number;
+  min: number;
+  max: number;
+  step: number;
+  allowLowPointWin: boolean;
+  allowDraws: boolean;
+};
+
 export type CompetitionConfig = {
   format: "two_team";
   ranking: {
@@ -50,18 +102,33 @@ export type CompetitionConfig = {
     allowSecondBye: "only_if_necessary" | "admin_authorised";
     countsAsWin: boolean;
   };
-  pairing: {
-    avoidRematch: boolean;
-    avoidSameInstitution: boolean;
-    minimisePullUps: boolean;
-  };
-  sides: {
-    enabled: boolean;
-    balanceFairness: boolean;
-  };
+  draw: DrawOptions;
+  scores: ScoreConfig;
   panelSize: number;
   studentSpeakerEdit: boolean;
   publicShowAdjudicators: boolean;
+};
+
+export const defaultDrawOptions: DrawOptions = {
+  type: "power_paired",
+  oddBracket: "pullup_top",
+  pairingMethod: "slide",
+  conflictAvoidance: "one_up_one_down",
+  sideAllocation: "balance",
+  pullupRestriction: "least_to_date",
+  avoidHistory: true,
+  avoidSameInstitution: true,
+  byeCountsAsWin: false,
+  firstRoundType: "random",
+};
+
+export const defaultScoreConfig: ScoreConfig = {
+  speakersPerTeam: 3,
+  min: 68,
+  max: 82,
+  step: 1,
+  allowLowPointWin: false,
+  allowDraws: false,
 };
 
 export const defaultCompetitionConfig: CompetitionConfig = {
@@ -75,19 +142,53 @@ export const defaultCompetitionConfig: CompetitionConfig = {
     allowSecondBye: "only_if_necessary",
     countsAsWin: false,
   },
-  pairing: {
-    avoidRematch: true,
-    avoidSameInstitution: true,
-    minimisePullUps: true,
-  },
-  sides: {
-    enabled: true,
-    balanceFairness: true,
-  },
+  draw: defaultDrawOptions,
+  scores: defaultScoreConfig,
   panelSize: 1,
   studentSpeakerEdit: true,
   publicShowAdjudicators: true,
 };
+
+/** Fill in defaults for configs stored before new sections existed. */
+export function normalizeCompetitionConfig(
+  raw: Partial<CompetitionConfig> | null | undefined
+): CompetitionConfig {
+  const legacy = (raw ?? {}) as Partial<CompetitionConfig> & {
+    pairing?: { avoidRematch?: boolean; avoidSameInstitution?: boolean };
+    sides?: { balanceFairness?: boolean };
+  };
+  return {
+    ...defaultCompetitionConfig,
+    ...legacy,
+    ranking: { ...defaultCompetitionConfig.ranking, ...(legacy.ranking ?? {}) },
+    bye: { ...defaultCompetitionConfig.bye, ...(legacy.bye ?? {}) },
+    draw: {
+      ...defaultDrawOptions,
+      ...(legacy.pairing?.avoidRematch !== undefined
+        ? { avoidHistory: legacy.pairing.avoidRematch }
+        : {}),
+      ...(legacy.pairing?.avoidSameInstitution !== undefined
+        ? { avoidSameInstitution: legacy.pairing.avoidSameInstitution }
+        : {}),
+      ...(legacy.sides?.balanceFairness === false
+        ? { sideAllocation: "random" as const }
+        : {}),
+      ...(legacy.bye?.countsAsWin !== undefined
+        ? { byeCountsAsWin: legacy.bye.countsAsWin }
+        : {}),
+      ...(legacy.draw ?? {}),
+    },
+    scores: { ...defaultScoreConfig, ...(legacy.scores ?? {}) },
+  };
+}
+
+export type DebateFlag =
+  | "pullup"
+  | "rematch"
+  | "same_institution"
+  | "one_up_one_down"
+  | "manual"
+  | "bubble";
 
 export const institutions = pgTable("institutions", {
   id: text("id").primaryKey(),
@@ -154,10 +255,27 @@ export const divisions = pgTable("divisions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Two-week rotating roster day labels, e.g. "Monday A". */
+export const ROSTER_DAYS = [
+  "Monday A",
+  "Tuesday A",
+  "Wednesday A",
+  "Thursday A",
+  "Friday A",
+  "Monday B",
+  "Tuesday B",
+  "Wednesday B",
+  "Thursday B",
+  "Friday B",
+] as const;
+export type RosterDay = (typeof ROSTER_DAYS)[number];
+
 export const venues = pgTable("venues", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   address: text("address"),
+  /** Which night this venue hosts on the two-week roster (e.g. Monday A). */
+  rosterDay: text("roster_day"),
   status: text("status").notNull().default("active"),
   floorPlan: jsonb("floor_plan"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -199,15 +317,16 @@ export const rounds = pgTable(
   (t) => [uniqueIndex("round_competition_number").on(t.competitionId, t.number)]
 );
 
-export const timeslots = pgTable("timeslots", {
+/** Competition-wide debate start times for team assignment, draws and public listings. */
+export const competitionTimeslots = pgTable("competition_timeslots", {
   id: text("id").primaryKey(),
-  roundId: text("round_id")
+  competitionId: text("competition_id")
     .notNull()
-    .references(() => rounds.id, { onDelete: "cascade" }),
-  label: text("label").notNull(),
-  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
-  endsAt: timestamp("ends_at", { withTimezone: true }),
+    .references(() => competitions.id, { onDelete: "cascade" }),
+  /** 24-hour wall-clock time as "HH:MM". */
+  startsAt: text("starts_at").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const teams = pgTable(
@@ -218,7 +337,10 @@ export const teams = pgTable(
       .notNull()
       .references(() => competitions.id, { onDelete: "cascade" }),
     institutionId: text("institution_id").references(() => institutions.id),
+    /** Set at creation and permanent thereafter. */
     divisionId: text("division_id").references(() => divisions.id),
+    venueId: text("venue_id").references(() => venues.id),
+    timeslotId: text("timeslot_id").references(() => competitionTimeslots.id),
     /** When bound to an institution: team number only (e.g. "1"). Otherwise freeform name. */
     name: text("name").notNull(),
     identifier: text("identifier").notNull(),
@@ -254,7 +376,7 @@ export const debates = pgTable(
     roundId: text("round_id")
       .notNull()
       .references(() => rounds.id, { onDelete: "cascade" }),
-    timeslotId: text("timeslot_id").references(() => timeslots.id),
+    timeslotId: text("timeslot_id").references(() => competitionTimeslots.id),
     venueId: text("venue_id").references(() => venues.id),
     roomId: text("room_id").references(() => rooms.id),
     divisionId: text("division_id").references(() => divisions.id),
@@ -264,6 +386,11 @@ export const debates = pgTable(
     affirmativeTeamName: text("affirmative_team_name"),
     negativeTeamName: text("negative_team_name"),
     status: debateStatusEnum("status").notNull().default("scheduled"),
+    /** Win bracket this pairing was drawn in (power-paired draws). */
+    bracket: integer("bracket"),
+    /** Ordering within the venue+timeslot group; drives room assignment. */
+    roomRank: integer("room_rank"),
+    flags: jsonb("flags").$type<DebateFlag[]>().notNull().default([]),
     isPullUp: boolean("is_pull_up").notNull().default(false),
     isRematch: boolean("is_rematch").notNull().default(false),
     isSameInstitution: boolean("is_same_institution").notNull().default(false),
@@ -302,6 +429,8 @@ export const drawVersions = pgTable("draw_versions", {
   status: text("status").notNull(), // draft | published | superseded
   scope: text("scope").notNull().default("all"), // all | venue | division
   scopeId: text("scope_id"),
+  drawType: text("draw_type").notNull().default("power_paired"),
+  options: jsonb("options").$type<DrawOptions>(),
   snapshot: jsonb("snapshot").notNull(),
   compromises: jsonb("compromises").$type<string[]>().notNull().default([]),
   hardViolations: jsonb("hard_violations").$type<string[]>().notNull().default([]),
@@ -335,6 +464,7 @@ export const adjudicatorConflicts = pgTable("adjudicator_conflicts", {
   reason: text("reason"),
 });
 
+/** Adjudicator availability per round + competition timeslot. Absent row = available. */
 export const adjudicatorAvailability = pgTable(
   "adjudicator_availability",
   {
@@ -342,12 +472,21 @@ export const adjudicatorAvailability = pgTable(
     adjudicatorId: text("adjudicator_id")
       .notNull()
       .references(() => adjudicatorProfiles.id, { onDelete: "cascade" }),
+    roundId: text("round_id")
+      .notNull()
+      .references(() => rounds.id, { onDelete: "cascade" }),
     timeslotId: text("timeslot_id")
       .notNull()
-      .references(() => timeslots.id, { onDelete: "cascade" }),
+      .references(() => competitionTimeslots.id, { onDelete: "cascade" }),
     available: boolean("available").notNull().default(true),
   },
-  (t) => [uniqueIndex("adj_availability_unique").on(t.adjudicatorId, t.timeslotId)]
+  (t) => [
+    uniqueIndex("adj_availability_unique").on(
+      t.adjudicatorId,
+      t.roundId,
+      t.timeslotId
+    ),
+  ]
 );
 
 /** Round-level team availability — unavailable teams are excluded from draws. */
@@ -405,7 +544,11 @@ export const ballots = pgTable("ballots", {
     .references(() => debates.id, { onDelete: "cascade" }),
   adjudicatorId: text("adjudicator_id").references(() => adjudicatorProfiles.id),
   submittedByUserId: text("submitted_by_user_id").references(() => user.id),
+  /** submitted = unconfirmed, accepted = confirmed, disputed = discarded (Tabbycat terms). */
   status: ballotStatusEnum("status").notNull().default("pending"),
+  /** Sequential version per debate; the latest confirmed version counts. */
+  version: integer("version").notNull().default(1),
+  discarded: boolean("discarded").notNull().default(false),
   winnerTeamId: text("winner_team_id").references(() => teams.id),
   affirmativePoints: integer("affirmative_points"),
   negativePoints: integer("negative_points"),
@@ -418,7 +561,38 @@ export const ballots = pgTable("ballots", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   acceptedBy: text("accepted_by").references(() => user.id),
+  confirmedBy: text("confirmed_by").references(() => user.id),
 });
+
+/** Per-speaker scores on a ballot (Tabbycat-style). Team total = sum of its rows. */
+export const speakerScores = pgTable(
+  "speaker_scores",
+  {
+    id: text("id").primaryKey(),
+    ballotId: text("ballot_id")
+      .notNull()
+      .references(() => ballots.id, { onDelete: "cascade" }),
+    debateId: text("debate_id")
+      .notNull()
+      .references(() => debates.id, { onDelete: "cascade" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    speakerId: text("speaker_id").references(() => speakers.id, {
+      onDelete: "set null",
+    }),
+    /** 1-based speaking position within the team. */
+    position: integer("position").notNull(),
+    /** Stored as integer hundredths to keep PGlite/Postgres behaviour identical. */
+    scoreHundredths: integer("score_hundredths").notNull(),
+    /** Duplicate / iron-person speech — excluded from speaker tab. */
+    ghost: boolean("ghost").notNull().default(false),
+  },
+  (t) => [
+    index("speaker_scores_ballot_idx").on(t.ballotId),
+    uniqueIndex("speaker_scores_unique").on(t.ballotId, t.teamId, t.position),
+  ]
+);
 
 export const teamAccessTokens = pgTable("team_access_tokens", {
   id: text("id").primaryKey(),
@@ -435,6 +609,28 @@ export const teamAccessTokens = pgTable("team_access_tokens", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
 });
+
+/** Team portal: delete requests for speakers who already appear on a ballot. */
+export const speakerDeletionRequests = pgTable(
+  "speaker_deletion_requests",
+  {
+    id: text("id").primaryKey(),
+    speakerId: text("speaker_id")
+      .notNull()
+      .references(() => speakers.id, { onDelete: "cascade" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    status: speakerDeletionStatusEnum("status").notNull().default("pending"),
+    decidedBy: text("decided_by").references(() => user.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("speaker_deletion_team_idx").on(t.teamId, t.status),
+    index("speaker_deletion_speaker_idx").on(t.speakerId),
+  ]
+);
 
 export const postponementRequests = pgTable("postponement_requests", {
   id: text("id").primaryKey(),

@@ -1,82 +1,47 @@
-import { inArray, or, eq, and } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { debates, rounds, teams } from "@/db/schema";
+import { institutions } from "@/db/schema";
+import { PublicDrawListings } from "@/app/public/draw/public-draw-listings";
 import { PageHeader } from "@/components/page-header";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { requireAuth } from "@/lib/auth/session";
 import { institutionIdsFor } from "@/lib/permissions";
+import { loadPublicDrawData } from "@/lib/public-draw";
 
-export default async function CoordinatorDrawPage() {
+export default async function CoordinatorDrawPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
+  const sp = await searchParams;
   const ctx = await requireAuth();
   const ids = institutionIdsFor(ctx);
-  const teamRows =
+  const [institutionRows, { rows, roundMenus }] = await Promise.all([
     ids.length > 0
-      ? await db.select().from(teams).where(inArray(teams.institutionId, ids))
-      : [];
-  const teamIds = teamRows.map((t) => t.id);
-  const publishedRounds = await db
-    .select()
-    .from(rounds)
-    .where(eq(rounds.drawStatus, "published"));
-  const publishedIds = publishedRounds.map((r) => r.id);
-
-  const debateRows =
-    teamIds.length > 0 && publishedIds.length > 0
-      ? await db
-          .select()
-          .from(debates)
-          .where(
-            and(
-              inArray(debates.roundId, publishedIds),
-              or(
-                inArray(debates.affirmativeTeamId, teamIds),
-                inArray(debates.negativeTeamId, teamIds)
-              )
-            )
-          )
-      : [];
+      ? db.select().from(institutions).where(inArray(institutions.id, ids))
+      : Promise.resolve([]),
+    loadPublicDrawData(),
+  ]);
+  const lockedInstitutions = institutionRows.map((i) => i.name);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Institution draw"
-        description="Published debates for your teams only"
+        description="Published debates for your institutions"
       />
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Affirmative</TableHead>
-              <TableHead>Negative</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {debateRows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={3} className="text-muted-foreground">
-                  No published debates for your teams
-                </TableCell>
-              </TableRow>
-            ) : (
-              debateRows.map((d) => (
-                <TableRow key={d.id}>
-                  <TableCell>{d.affirmativeTeamName}</TableCell>
-                  <TableCell>{d.negativeTeamName}</TableCell>
-                  <TableCell>{d.status}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {lockedInstitutions.length === 0 ? (
+        <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+          No institutions are linked to your account
+        </div>
+      ) : (
+        <PublicDrawListings
+          rows={rows}
+          roundMenus={roundMenus}
+          currentRound={sp.round}
+          roundBasePath="/coordinator/draw"
+          lockedInstitutions={lockedInstitutions}
+        />
+      )}
     </div>
   );
 }

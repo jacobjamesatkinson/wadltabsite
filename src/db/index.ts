@@ -42,8 +42,8 @@ function clearStalePgliteLock(dataDir: string) {
   }
 }
 
-function createPgliteDb(): AppDb {
-  if (globalFor.wadlDb && globalFor.wadlPglite) return globalFor.wadlDb;
+function ensurePgliteClient() {
+  if (globalFor.wadlPglite) return globalFor.wadlPglite;
 
   const dataDir = pgliteDataDir();
   fs.mkdirSync(dataDir, { recursive: true });
@@ -51,18 +51,167 @@ function createPgliteDb(): AppDb {
 
   try {
     globalFor.wadlPglite = new PGlite(dataDir);
-    globalFor.wadlDb = drizzlePglite(globalFor.wadlPglite, { schema });
-    return globalFor.wadlDb;
-  } catch (err) {
+  } catch {
     clearStalePgliteLock(dataDir);
     globalFor.wadlPglite = new PGlite(dataDir);
-    globalFor.wadlDb = drizzlePglite(globalFor.wadlPglite, { schema });
-    return globalFor.wadlDb;
   }
+  return globalFor.wadlPglite;
+}
+
+/** Ensure recent schema columns exist when an old PGlite process skipped migration. */
+async function ensureSchemaPatches(client: PGlite) {
+  const tables = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'competitions'
+     ) AS exists`
+  );
+  if (!tables.rows[0]?.exists) return;
+
+  await client.query(
+    `ALTER TABLE teams ADD COLUMN IF NOT EXISTS venue_id text`
+  );
+  await client.query(
+    `ALTER TABLE teams ADD COLUMN IF NOT EXISTS timeslot_id text`
+  );
+  await client.query(
+    `ALTER TABLE venues ADD COLUMN IF NOT EXISTS roster_day text`
+  );
+
+  const slots = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'competition_timeslots'
+     ) AS exists`
+  );
+  if (!slots.rows[0]?.exists) return;
+
+  await client.query(
+    `ALTER TABLE competition_timeslots ADD COLUMN IF NOT EXISTS starts_at text`
+  );
+  try {
+    await client.query(`
+      UPDATE competition_timeslots
+      SET starts_at = CASE
+        WHEN label ~ '^[0-2][0-9]:[0-5][0-9]$' THEN label
+        ELSE COALESCE(NULLIF(starts_at, ''), '16:00')
+      END
+      WHERE starts_at IS NULL OR starts_at = ''
+    `);
+  } catch {
+    await client.query(
+      `UPDATE competition_timeslots SET starts_at = '16:00' WHERE starts_at IS NULL OR starts_at = ''`
+    );
+  }
+  try {
+    await client.query(
+      `ALTER TABLE competition_timeslots ALTER COLUMN starts_at SET NOT NULL`
+    );
+  } catch {
+    // already NOT NULL
+  }
+  try {
+    await client.query(
+      `ALTER TABLE competition_timeslots DROP COLUMN IF EXISTS label`
+    );
+  } catch {
+    // label already removed
+  }
+
+  // Draw rewrite columns (mirrors migration 0007 for long-lived dev DBs).
+  await client.query(`ALTER TABLE debates ADD COLUMN IF NOT EXISTS bracket integer`);
+  await client.query(`ALTER TABLE debates ADD COLUMN IF NOT EXISTS room_rank integer`);
+  await client.query(
+    `ALTER TABLE debates ADD COLUMN IF NOT EXISTS flags jsonb DEFAULT '[]'::jsonb NOT NULL`
+  );
+  await client.query(
+    `ALTER TABLE draw_versions ADD COLUMN IF NOT EXISTS draw_type text DEFAULT 'power_paired' NOT NULL`
+  );
+  await client.query(`ALTER TABLE draw_versions ADD COLUMN IF NOT EXISTS options jsonb`);
+  await client.query(
+    `ALTER TABLE ballots ADD COLUMN IF NOT EXISTS version integer DEFAULT 1 NOT NULL`
+  );
+  await client.query(
+    `ALTER TABLE ballots ADD COLUMN IF NOT EXISTS discarded boolean DEFAULT false NOT NULL`
+  );
+  await client.query(`ALTER TABLE ballots ADD COLUMN IF NOT EXISTS confirmed_by text`);
+  await client.query(
+    `ALTER TABLE adjudicator_availability ADD COLUMN IF NOT EXISTS round_id text`
+  );
+
+  // Repair venues that stored roster labels in address before roster_day existed.
+  await client.query(`
+    UPDATE venues
+    SET roster_day = address, address = NULL
+    WHERE roster_day IS NULL
+      AND address IN (
+        'Monday A', 'Tuesday A', 'Wednesday A', 'Thursday A', 'Friday A',
+        'Monday B', 'Tuesday B', 'Wednesday B', 'Thursday B', 'Friday B'
+      )
+  `);
+
+  // Speaker deletion requests (mirrors migration 0008).
+  await client.query(`
+    DO $$ BEGIN
+      CREATE TYPE speaker_deletion_status AS ENUM ('pending', 'approved', 'rejected');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS speaker_deletion_requests (
+      id text PRIMARY KEY NOT NULL,
+      speaker_id text NOT NULL REFERENCES speakers(id) ON DELETE cascade,
+      team_id text NOT NULL REFERENCES teams(id) ON DELETE cascade,
+      status speaker_deletion_status DEFAULT 'pending' NOT NULL,
+      decided_by text REFERENCES "user"(id),
+      decided_at timestamptz,
+      created_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS speaker_deletion_team_idx ON speaker_deletion_requests (team_id, status)`
+  );
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS speaker_deletion_speaker_idx ON speaker_deletion_requests (speaker_id)`
+  );
+}
+
+let schemaPatchPromise: Promise<void> | null = null;
+
+function scheduleSchemaPatches(client: PGlite) {
+  if (schemaPatchPromise) return schemaPatchPromise;
+  schemaPatchPromise = client.waitReady
+    .then(() => ensureSchemaPatches(client))
+    .catch((err) => {
+      schemaPatchPromise = null;
+      console.error("[db] schema patch failed:", err);
+    });
+  return schemaPatchPromise;
+}
+
+function createPgliteDb(): AppDb {
+  const client = ensurePgliteClient();
+  void scheduleSchemaPatches(client);
+  // Rebind drizzle when the schema gains tables (Turbopack HMR) so db.query stays current.
+  const queryApi = globalFor.wadlDb?.query as Record<string, unknown> | undefined;
+  if (
+    !globalFor.wadlDb ||
+    !queryApi?.competitionTimeslots ||
+    !queryApi?.speakerScores ||
+    !queryApi?.speakerDeletionRequests
+  ) {
+    globalFor.wadlDb = drizzlePglite(client, { schema });
+  }
+  return globalFor.wadlDb;
 }
 
 function createPostgresDb(): AppDb {
-  if (globalFor.wadlDb && globalFor.wadlPgClient) return globalFor.wadlDb;
+  if (globalFor.wadlDb && globalFor.wadlPgClient) {
+    if (process.env.NODE_ENV !== "production") {
+      globalFor.wadlDb = drizzlePg(globalFor.wadlPgClient, { schema });
+    }
+    return globalFor.wadlDb;
+  }
   globalFor.wadlPgClient = postgres(process.env.DATABASE_URL!, {
     max: 10,
     prepare: false,
@@ -72,7 +221,6 @@ function createPostgresDb(): AppDb {
 }
 
 function getDb(): AppDb {
-  if (globalFor.wadlDb) return globalFor.wadlDb;
   return isPgliteMode() ? createPgliteDb() : createPostgresDb();
 }
 
@@ -93,6 +241,7 @@ export async function ensureDbReady() {
     try {
       await globalFor.wadlPglite.waitReady;
       await globalFor.wadlPglite.query("select 1");
+      await scheduleSchemaPatches(globalFor.wadlPglite);
     } catch (err) {
       console.error(
         "[db] PGlite data appears corrupt or locked.",

@@ -1,84 +1,88 @@
 import { inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { institutions, speakers, teams } from "@/db/schema";
-import { PageHeader } from "@/components/page-header";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  competitionTimeslots,
+  divisions,
+  institutions,
+  speakers,
+  teams,
+  venues,
+} from "@/db/schema";
+import { PageHeader } from "@/components/page-header";
 import { requireAuth } from "@/lib/auth/session";
 import { institutionIdsFor } from "@/lib/permissions";
 import { formatTeamDisplayName } from "@/lib/teams/display-name";
-import { SpeakerEditor } from "./speaker-editor";
+import { formatTimeslotTime } from "@/lib/timeslots/format";
+import {
+  CoordinatorTeamsTable,
+  type CoordinatorTeamRow,
+} from "./coordinator-teams-table";
 
 export default async function CoordinatorTeamsPage() {
   const ctx = await requireAuth();
   const ids = institutionIdsFor(ctx);
-  const [teamRows, institutionRows] = await Promise.all([
-    ids.length > 0
-      ? db.select().from(teams).where(inArray(teams.institutionId, ids))
-      : Promise.resolve([]),
-    ids.length > 0
-      ? db.select().from(institutions).where(inArray(institutions.id, ids))
-      : Promise.resolve([]),
-  ]);
+  const [teamRows, institutionRows, divisionRows, venueRows, slotRows] =
+    await Promise.all([
+      ids.length > 0
+        ? db.select().from(teams).where(inArray(teams.institutionId, ids))
+        : Promise.resolve([]),
+      ids.length > 0
+        ? db.select().from(institutions).where(inArray(institutions.id, ids))
+        : Promise.resolve([]),
+      db.select().from(divisions),
+      db.select().from(venues),
+      db.select().from(competitionTimeslots),
+    ]);
+
   const instMap = new Map(institutionRows.map((i) => [i.id, i]));
+  const divMap = new Map(divisionRows.map((d) => [d.id, d.name]));
+  const venueMap = new Map(venueRows.map((v) => [v.id, v.name]));
+  const slotMap = new Map(
+    slotRows.map((s) => [s.id, formatTimeslotTime(s.startsAt)])
+  );
   const teamIds = teamRows.map((t) => t.id);
   const speakerRows =
     teamIds.length > 0
       ? await db.select().from(speakers).where(inArray(speakers.teamId, teamIds))
       : [];
+  const speakerCount = new Map<string, number>();
+  for (const s of speakerRows) {
+    speakerCount.set(s.teamId, (speakerCount.get(s.teamId) ?? 0) + 1);
+  }
+
+  const rows: CoordinatorTeamRow[] = teamRows
+    .map((t) => {
+      const institution = t.institutionId
+        ? instMap.get(t.institutionId)
+        : null;
+      return {
+        id: t.id,
+        name: formatTeamDisplayName(t, institution ?? null),
+        identifier: t.identifier,
+        institution: institution?.name ?? "—",
+        division: t.divisionId ? (divMap.get(t.divisionId) ?? "—") : "—",
+        venue: t.venueId ? (venueMap.get(t.venueId) ?? "—") : "—",
+        timeslot: t.timeslotId ? (slotMap.get(t.timeslotId) ?? "—") : "—",
+        record: `${t.wins}–${t.losses}`,
+        speakers: speakerCount.get(t.id) ?? 0,
+        status: t.status,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="My teams"
-        description="Edit speakers for teams at your institutions"
+        description="Teams at your institutions — open a team to manage speakers"
       />
-      <div className="space-y-6">
-        {teamRows.map((t) => (
-          <section key={t.id} className="space-y-3 rounded-lg border p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold">
-                  {formatTeamDisplayName(
-                    t,
-                    t.institutionId ? instMap.get(t.institutionId) : null
-                  )}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {t.identifier} · {t.wins}–{t.losses}
-                </p>
-              </div>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Speaker</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {speakerRows
-                  .filter((s) => s.teamId === t.id)
-                  .map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell>{s.name}</TableCell>
-                      <TableCell className="text-right">
-                        <SpeakerEditor teamId={t.id} speakerId={s.id} mode="remove" />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
-            <SpeakerEditor teamId={t.id} mode="add" />
-          </section>
-        ))}
-      </div>
+      {rows.length === 0 ? (
+        <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+          No teams at your institutions yet
+        </div>
+      ) : (
+        <CoordinatorTeamsTable rows={rows} />
+      )}
     </div>
   );
 }

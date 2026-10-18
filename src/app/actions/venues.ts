@@ -10,18 +10,27 @@ import { getAuthContext } from "@/lib/auth/session";
 import { createId } from "@/lib/id";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 
-export async function createVenue(input: { name: string; address?: string }) {
+export async function createVenue(input: {
+  name: string;
+  address?: string;
+  rosterDay?: string | null;
+}) {
   const ctx = await getAuthContext();
   if (!ctx) throw new Error("UNAUTHORIZED");
   requirePermission(ctx, "venues:manage");
   const data = z
-    .object({ name: z.string().min(1), address: z.string().optional() })
+    .object({
+      name: z.string().min(1),
+      address: z.string().optional(),
+      rosterDay: z.string().nullable().optional(),
+    })
     .parse(input);
   const id = createId("ven");
   await db.insert(venues).values({
     id,
     name: data.name,
     address: data.address,
+    rosterDay: data.rosterDay || null,
   });
   await writeAudit({
     actorId: ctx.userId,
@@ -73,7 +82,12 @@ export async function createRoom(input: {
 
 export async function updateVenue(
   id: string,
-  input: { name: string; address?: string; status?: string }
+  input: {
+    name: string;
+    address?: string;
+    status?: string;
+    rosterDay?: string | null;
+  }
 ) {
   const ctx = await getAuthContext();
   if (!ctx) throw new Error("UNAUTHORIZED");
@@ -83,6 +97,7 @@ export async function updateVenue(
       name: z.string().min(1),
       address: z.string().optional(),
       status: z.string().optional(),
+      rosterDay: z.string().nullable().optional(),
     })
     .parse(input);
   await db
@@ -90,6 +105,7 @@ export async function updateVenue(
     .set({
       name: data.name,
       address: data.address,
+      rosterDay: data.rosterDay === undefined ? undefined : data.rosterDay || null,
       status: data.status ?? "active",
       updatedAt: new Date(),
     })

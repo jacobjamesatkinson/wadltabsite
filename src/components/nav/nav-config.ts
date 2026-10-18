@@ -19,7 +19,8 @@ export type NavIconName =
   | "UserCircle"
   | "Eye"
   | "Shuffle"
-  | "CheckCircle2";
+  | "CheckCircle2"
+  | "Upload";
 
 export type NavItem = {
   title: string;
@@ -47,6 +48,8 @@ export const ROUND_STEPS = [
     icon: "CheckCircle2" as const,
   },
   { title: "Draw", slug: "draw", icon: "Shuffle" as const },
+  { title: "Matchups", slug: "matchups", icon: "Users" as const },
+  { title: "Adjudicators", slug: "adjudicators", icon: "Gavel" as const },
   { title: "Display", slug: "display", icon: "Eye" as const },
   { title: "Results", slug: "results", icon: "ClipboardList" as const },
 ] as const;
@@ -67,27 +70,33 @@ export const adminSetupNav: NavItem[] = [
     permission: "adjudicators:manage",
   },
   { title: "Venues", href: "/admin/venues", icon: "MapPin", permission: "venues:manage" },
+  {
+    title: "Timeslots",
+    href: "/admin/timeslots",
+    icon: "Clock",
+    permission: "competitions:manage",
+  },
 ];
 
 export const adminSettingsNav: NavItem[] = [
   { title: "Accounts", href: "/admin/accounts", icon: "Shield", permission: "accounts:manage" },
   { title: "Audit log", href: "/admin/audit", icon: "ScrollText", permission: "audit:view" },
   {
-    title: "Competitions",
+    title: "General",
     href: "/admin/settings",
-    icon: "Trophy",
-    permission: "competitions:manage",
-  },
-  {
-    title: "Manage Rounds",
-    href: "/admin/settings/rounds",
-    icon: "CalendarDays",
+    icon: "Settings",
     permission: "competitions:manage",
   },
   {
     title: "Manage Divisions",
     href: "/admin/settings/divisions",
     icon: "ListChecks",
+    permission: "competitions:manage",
+  },
+  {
+    title: "Importer",
+    href: "/admin/settings/importer",
+    icon: "Upload",
     permission: "competitions:manage",
   },
 ];

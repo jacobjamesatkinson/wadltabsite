@@ -3,17 +3,20 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  competitionTimeslots,
   institutionMemberships,
   teams,
   user,
   userRoles,
 } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/link-button";
+import { ensureSiteCompetition } from "@/lib/competition";
 import { formatTeamDisplayName } from "@/lib/teams/display-name";
+import { TeamForm } from "../../teams/team-form";
 import { InstitutionForm } from "../institution-form";
 import { CoordinatorsTable } from "./coordinators-table";
+import { InstitutionCoordinatorForm } from "./institution-coordinator-form";
 import { InstitutionTeamsTable } from "./institution-teams-table";
 
 export default async function InstitutionDetailPage({
@@ -27,15 +30,33 @@ export default async function InstitutionDetailPage({
   });
   if (!institution) notFound();
 
-  const [teamRows, memberships, roles, users] = await Promise.all([
-    db.select().from(teams).where(eq(teams.institutionId, id)),
-    db
-      .select()
-      .from(institutionMemberships)
-      .where(eq(institutionMemberships.institutionId, id)),
-    db.select().from(userRoles).where(eq(userRoles.institutionId, id)),
-    db.select({ id: user.id, name: user.name, email: user.email, status: user.status }).from(user),
-  ]);
+  const competition = await ensureSiteCompetition();
+
+  const [teamRows, memberships, roles, users, divisions, venues, timeslots] =
+    await Promise.all([
+      db.select().from(teams).where(eq(teams.institutionId, id)),
+      db
+        .select()
+        .from(institutionMemberships)
+        .where(eq(institutionMemberships.institutionId, id)),
+      db.select().from(userRoles).where(eq(userRoles.institutionId, id)),
+      db
+        .select({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          status: user.status,
+        })
+        .from(user),
+      db.query.divisions.findMany({
+        where: (t, { eq: e }) => e(t.competitionId, competition.id),
+      }),
+      db.query.venues.findMany(),
+      db
+        .select()
+        .from(competitionTimeslots)
+        .where(eq(competitionTimeslots.competitionId, competition.id)),
+    ]);
 
   const userMap = new Map(users.map((u) => [u.id, u]));
   const coordinatorIds = new Set<string>();
@@ -55,6 +76,17 @@ export default async function InstitutionDetailPage({
       permission: membership?.permission ?? "coordinator",
     };
   });
+
+  const availableUsers = users
+    .filter((u) => !coordinatorIds.has(u.id) && u.status === "active")
+    .map((u) => ({ id: u.id, name: u.name, email: u.email }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const institutionOpt = {
+    id: institution.id,
+    name: institution.name,
+    shortName: institution.shortName,
+  };
 
   return (
     <div className="space-y-6">
@@ -79,21 +111,36 @@ export default async function InstitutionDetailPage({
         }
       />
 
-      <div className="flex flex-wrap gap-2">
-        <Badge variant={institution.status === "active" ? "default" : "secondary"}>
-          {institution.status}
-        </Badge>
-        <Badge variant="outline">{teamRows.length} teams</Badge>
-        <Badge variant="outline">{coordinators.length} coordinators</Badge>
-      </div>
-
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold">Coordinators</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Coordinators</h2>
+          <InstitutionCoordinatorForm
+            institutionId={institution.id}
+            availableUsers={availableUsers}
+          />
+        </div>
         <CoordinatorsTable rows={coordinators} />
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold">Teams</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Teams</h2>
+          <TeamForm
+            competitionId={competition.id}
+            institutions={[institutionOpt]}
+            defaultInstitutionId={institution.id}
+            lockInstitution
+            triggerSize="sm"
+            divisions={divisions.map((d) => ({ id: d.id, name: d.name }))}
+            venues={venues.map((v) => ({ id: v.id, name: v.name }))}
+            timeslots={[...timeslots]
+              .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+              .map((t) => ({
+                id: t.id,
+                startsAt: t.startsAt,
+              }))}
+          />
+        </div>
         <InstitutionTeamsTable
           rows={teamRows.map((t) => ({
             id: t.id,

@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { PageHeader } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { SectionCards } from "@/components/section-cards";
-import { getSiteCompetition, getSiteRounds } from "@/lib/competition";
+import { ensureSiteCompetition, getSiteRounds } from "@/lib/competition";
 import {
   Table,
   TableBody,
@@ -14,7 +14,7 @@ import {
 
 export default async function AdminOverviewPage() {
   const [competition, rounds, teamCount, institutionCount] = await Promise.all([
-    getSiteCompetition(),
+    ensureSiteCompetition(),
     getSiteRounds(),
     db.query.teams.findMany().then((r) => r.length),
     db.query.institutions.findMany().then((r) => r.length),
@@ -27,18 +27,14 @@ export default async function AdminOverviewPage() {
     <div className="space-y-6">
       <PageHeader
         title="Overview"
-        description={
-          competition
-            ? `${competition.name} · ${competition.season}`
-            : "Competition operations dashboard"
-        }
+        description={`${competition.name} · ${competition.season}`}
         actions={
           firstRound ? (
             <LinkButton href={`/admin/rounds/${firstRound.id}/availability`}>
               Open rounds
             </LinkButton>
           ) : (
-            <LinkButton href="/admin/settings">Configure competition</LinkButton>
+            <LinkButton href="/admin/settings">General settings</LinkButton>
           )
         }
       />
@@ -46,8 +42,8 @@ export default async function AdminOverviewPage() {
         cards={[
           {
             label: "Competition",
-            value: competition?.shortName ?? "—",
-            hint: competition?.status ?? "Not configured",
+            value: competition.name,
+            hint: competition.status,
           },
           {
             label: "Institutions",
@@ -82,7 +78,7 @@ export default async function AdminOverviewPage() {
               {rounds.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={3} className="text-muted-foreground">
-                    No rounds yet — add them under Competition settings
+                    No rounds yet — add them under the Rounds menu
                   </TableCell>
                 </TableRow>
               ) : (
