@@ -24,7 +24,8 @@ export function LoginForm() {
     }
     toast.success("Signed in");
     // Full navigation so the session cookie is picked up by the server.
-    window.location.assign("/");
+    // /dashboard resolves to the role home (/admin, /ha, /coordinator, …).
+    window.location.assign("/dashboard");
   }
 
   return (
@@ -68,7 +69,10 @@ export function LoginForm() {
           variant="outline"
           className="w-full"
           onClick={async () => {
-            await authClient.signIn.social({ provider: "google" });
+            await authClient.signIn.social({
+              provider: "google",
+              callbackURL: "/dashboard",
+            });
           }}
         >
           Continue with Google
