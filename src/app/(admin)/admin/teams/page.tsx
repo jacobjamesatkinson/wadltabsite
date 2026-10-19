@@ -40,7 +40,6 @@ export default async function TeamsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Teams"
-        description="Competition teams — open a team for debates, ballots and private links"
         actions={
           <TeamForm
             competitionId={competition.id}
