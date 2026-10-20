@@ -3,6 +3,9 @@ import { adminSetupNav, adminSettingsNav } from "@/components/nav/nav-config";
 import { AppShell } from "@/components/layout/app-shell";
 import { getSiteRounds } from "@/lib/competition";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 export default async function AdminLayout({
   children,
 }: {
