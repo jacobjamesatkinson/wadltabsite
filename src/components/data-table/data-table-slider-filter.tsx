@@ -126,10 +126,10 @@ function DataTableSliderFilterContent<TData extends RowData>({
 
   // An open-ended bound, like `estimatedHours=,8`, shows as the column limit.
   const bounds = parseRangeBounds(columnFilterValueProp);
-  const columnFilterValue: RangeValue | undefined = bounds
-    ? [bounds[0] ?? min, bounds[1] ?? max]
-    : undefined;
-  const range: RangeValue = columnFilterValue ?? [min, max];
+  const from = bounds ? (bounds[0] ?? min) : min;
+  const to = bounds ? (bounds[1] ?? max) : max;
+  const range: RangeValue = React.useMemo(() => [from, to], [from, to]);
+  const columnFilterValue: RangeValue | undefined = bounds ? range : undefined;
 
   const formatValue = React.useCallback((value: number) => {
     return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
