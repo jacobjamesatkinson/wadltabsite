@@ -115,9 +115,10 @@ Fremantle College,FREM`,
   teams: {
     label: "Teams",
     columns:
-      "institution (shortName, blank if independent), name (number if institution), identifier (optional), division, venue (optional), timeslot (optional HH:MM)",
+      "institution (shortName, blank if independent), name (number if institution; same number ok across divisions), identifier (optional), division, venue (optional), timeslot (optional HH:MM)",
     example: `institution,name,division,venue,timeslot
 PERTH,1,Junior A,UWA Arts Building,16:00
+PERTH,1,Novice A,UWA Arts Building,16:00
 FREM,1,Junior A,UWA Arts Building,16:00
 ,Independent Debaters,Senior A,,18:00`,
   },

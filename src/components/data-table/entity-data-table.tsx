@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { ColumnDef, RowData } from "@tanstack/react-table";
+import type { ColumnDef, RowData, SortingState } from "@tanstack/react-table";
 import { BulkDeleteBar } from "@/components/data-table/bulk-delete-bar";
 import { DataTable } from "@/components/data-table/data-table";
 import { DataTableAdvancedToolbar } from "@/components/data-table/data-table-advanced-toolbar";
@@ -20,6 +20,8 @@ export type EntityColumn<TData extends RowData> = {
   variant?: FilterVariant;
   cell?: (row: TData) => React.ReactNode;
   enableColumnFilter?: boolean;
+  /** Defaults to alphanumeric for text columns so "2" sorts before "10". */
+  sortFn?: "alphanumeric" | "text" | "datetime";
 };
 
 export function EntityDataTable<TData extends { id: string }>({
@@ -30,6 +32,7 @@ export function EntityDataTable<TData extends { id: string }>({
   trailingColumn,
   enableRowSelection = false,
   bulkDelete,
+  initialSorting,
 }: {
   data: TData[];
   columns: EntityColumn<TData>[];
@@ -41,6 +44,7 @@ export function EntityDataTable<TData extends { id: string }>({
     entityLabel: string;
     onDelete: (ids: string[]) => Promise<void>;
   };
+  initialSorting?: SortingState;
 }) {
   const columns = React.useMemo<ColumnDef<DataTableFeatures, TData>[]>(() => {
     const defs: ColumnDef<DataTableFeatures, TData>[] = [];
@@ -82,6 +86,7 @@ export function EntityDataTable<TData extends { id: string }>({
     }
 
     for (const col of columnConfigs) {
+      const variant = col.variant ?? "text";
       defs.push({
         id: col.id,
         accessorKey: col.accessorKey,
@@ -94,9 +99,15 @@ export function EntityDataTable<TData extends { id: string }>({
             : String(row.getValue(col.id) ?? "—"),
         meta: {
           label: col.label,
-          variant: col.variant ?? "text",
+          variant,
         },
         enableColumnFilter: col.enableColumnFilter ?? true,
+        // Prefer natural order for labels like "CCGS 2" before "CCGS 10".
+        ...(col.sortFn
+          ? { sortFn: col.sortFn }
+          : variant === "number"
+            ? {}
+            : { sortFn: "alphanumeric" as const }),
       });
     }
 
@@ -112,6 +123,7 @@ export function EntityDataTable<TData extends { id: string }>({
     enableRowSelection,
     initialState: {
       pagination: { pageIndex: 0, pageSize },
+      sorting: initialSorting,
     },
   });
 

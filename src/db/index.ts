@@ -174,6 +174,13 @@ async function ensureSchemaPatches(client: PGlite) {
   await client.query(
     `CREATE INDEX IF NOT EXISTS speaker_deletion_speaker_idx ON speaker_deletion_requests (speaker_id)`
   );
+
+  // Team identifiers are unique per division (mirrors migration 0009).
+  await client.query(`DROP INDEX IF EXISTS team_competition_identifier`);
+  await client.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS team_competition_division_identifier
+    ON teams (competition_id, division_id, identifier)
+  `);
 }
 
 let schemaPatchPromise: Promise<void> | null = null;

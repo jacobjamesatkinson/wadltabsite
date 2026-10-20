@@ -11,7 +11,10 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { requireAuth } from "@/lib/auth/session";
 import { institutionIdsFor } from "@/lib/permissions";
-import { formatTeamDisplayName } from "@/lib/teams/display-name";
+import {
+  compareTeamNames,
+  formatTeamDisplayName,
+} from "@/lib/teams/display-name";
 import { formatTimeslotTime } from "@/lib/timeslots/format";
 import {
   CoordinatorTeamsTable,
@@ -68,7 +71,7 @@ export default async function CoordinatorTeamsPage() {
         status: t.status,
       };
     })
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    .sort((a, b) => compareTeamNames(a.name, b.name));
 
   return (
     <div className="space-y-6">

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import { z } from "zod";
 import { db } from "@/db";
@@ -228,6 +228,18 @@ async function importTeams(
   );
   const slotByTime = new Map(slots.map((s) => [s.startsAt, s]));
 
+  // Keyed by divisionId + identifier so the same number can exist across divisions.
+  const existingTeams = await db
+    .select()
+    .from(teams)
+    .where(eq(teams.competitionId, competition.id));
+  const byDivisionIdentifier = new Map(
+    existingTeams.map((t) => [
+      `${t.divisionId ?? ""}:${t.identifier.toUpperCase()}`,
+      t,
+    ])
+  );
+
   const results: ImportRowResult[] = [];
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
@@ -277,10 +289,12 @@ async function importTeams(
         timeslotId = slot.id;
       }
 
-      const existing = await db.query.teams.findFirst({
-        where: (t, { and: a, eq: e }) =>
-          a(e(t.competitionId, competition.id), e(t.identifier, identifier)),
-      });
+      const mapKey = `${division.id}:${identifier}`;
+      const existing =
+        byDivisionIdentifier.get(mapKey) ??
+        // Legacy rows with no division: claim them for this import's division.
+        byDivisionIdentifier.get(`:${identifier}`);
+
       if (existing) {
         await db
           .update(teams)
@@ -295,6 +309,20 @@ async function importTeams(
             updatedAt: new Date(),
           })
           .where(eq(teams.id, existing.id));
+        const updated = {
+          ...existing,
+          institutionId,
+          divisionId: division.id,
+          venueId,
+          timeslotId,
+          name,
+          identifier,
+          status: "active",
+        };
+        if (!existing.divisionId) {
+          byDivisionIdentifier.delete(`:${identifier}`);
+        }
+        byDivisionIdentifier.set(mapKey, updated);
         await writeAudit({
           actorId,
           action: "team.update",
@@ -305,33 +333,67 @@ async function importTeams(
         results.push({
           row: line,
           status: "updated",
-          message: identifier,
+          message: `${identifier} (${division.name})`,
         });
         continue;
       }
 
       const id = createId("team");
-      await db.insert(teams).values({
-        id,
-        competitionId: competition.id,
-        institutionId,
-        divisionId: division.id,
-        venueId,
-        timeslotId,
-        name,
-        identifier,
-      });
+      try {
+        await db
+          .insert(teams)
+          .values({
+            id,
+            competitionId: competition.id,
+            institutionId,
+            divisionId: division.id,
+            venueId,
+            timeslotId,
+            name,
+            identifier,
+          })
+          .onConflictDoUpdate({
+            target: [teams.competitionId, teams.divisionId, teams.identifier],
+            set: {
+              institutionId,
+              venueId,
+              timeslotId,
+              name,
+              status: "active",
+              updatedAt: new Date(),
+            },
+          });
+      } catch (err) {
+        throw new Error(formatTeamImportDbError(err, identifier, division.name));
+      }
+
+      const [saved] = await db
+        .select()
+        .from(teams)
+        .where(
+          and(
+            eq(teams.competitionId, competition.id),
+            eq(teams.divisionId, division.id),
+            eq(teams.identifier, identifier)
+          )
+        )
+        .limit(1);
+      if (saved) {
+        byDivisionIdentifier.set(mapKey, saved);
+      }
+
+      const wasUpdate = saved?.id !== id;
       await writeAudit({
         actorId,
-        action: "team.create",
+        action: wasUpdate ? "team.update" : "team.create",
         entityType: "team",
-        entityId: id,
+        entityId: saved?.id ?? id,
         details: { identifier, division: division.name, via: "csv" },
       });
       results.push({
         row: line,
-        status: "created",
-        message: identifier,
+        status: wasUpdate ? "updated" : "created",
+        message: `${identifier} (${division.name})`,
       });
     } catch (err) {
       results.push({
@@ -342,6 +404,20 @@ async function importTeams(
     }
   }
   return tally(results);
+}
+
+function formatTeamImportDbError(
+  err: unknown,
+  identifier: string,
+  divisionName: string
+): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/unique|duplicate|23505/i.test(raw)) {
+    return `Team ${identifier} already exists in another division — restart the app if you just updated uniqueness rules, then retry`;
+  }
+  // Drizzle wraps the SQL; keep the useful tail when possible.
+  const short = raw.replace(/^Failed query:\s*/i, "").slice(0, 180);
+  return short || `Could not save ${identifier} (${divisionName})`;
 }
 
 async function importVenues(

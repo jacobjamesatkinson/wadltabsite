@@ -23,6 +23,7 @@ export function TeamsTable({ rows }: { rows: TeamTableRow[] }) {
       data={rows}
       ariaLabel="Teams"
       enableRowSelection
+      initialSorting={[{ id: "name", desc: false }]}
       bulkDelete={{
         entityLabel: "team",
         onDelete: async (ids) => {

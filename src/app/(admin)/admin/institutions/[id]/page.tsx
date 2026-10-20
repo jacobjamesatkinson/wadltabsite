@@ -12,7 +12,10 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ensureSiteCompetition } from "@/lib/competition";
-import { formatTeamDisplayName } from "@/lib/teams/display-name";
+import {
+  compareTeamNames,
+  formatTeamDisplayName,
+} from "@/lib/teams/display-name";
 import { TeamForm } from "../../teams/team-form";
 import { InstitutionForm } from "../institution-form";
 import { CoordinatorsTable } from "./coordinators-table";
@@ -87,6 +90,7 @@ export default async function InstitutionDetailPage({
     name: institution.name,
     shortName: institution.shortName,
   };
+  const divisionNameById = new Map(divisions.map((d) => [d.id, d.name]));
 
   return (
     <div className="space-y-6">
@@ -142,13 +146,17 @@ export default async function InstitutionDetailPage({
           />
         </div>
         <InstitutionTeamsTable
-          rows={teamRows.map((t) => ({
-            id: t.id,
-            name: formatTeamDisplayName(t, institution),
-            identifier: t.identifier,
-            record: `${t.wins}–${t.losses}`,
-            status: t.status,
-          }))}
+          rows={teamRows
+            .map((t) => ({
+              id: t.id,
+              name: formatTeamDisplayName(t, institution),
+              division:
+                (t.divisionId && divisionNameById.get(t.divisionId)) || "—",
+              identifier: t.identifier,
+              record: `${t.wins}–${t.losses}`,
+              status: t.status,
+            }))
+            .sort((a, b) => compareTeamNames(a.name, b.name))}
         />
       </section>
     </div>

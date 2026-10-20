@@ -21,6 +21,7 @@ export function CoordinatorTeamsTable({ rows }: { rows: CoordinatorTeamRow[] }) 
     <EntityDataTable
       data={rows}
       ariaLabel="My teams"
+      initialSorting={[{ id: "name", desc: false }]}
       columns={[
         {
           id: "name",

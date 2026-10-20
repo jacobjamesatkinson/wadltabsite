@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 export type InstitutionTeamRow = {
   id: string;
   name: string;
+  division: string;
   identifier: string;
   record: string;
   status: string;
@@ -17,6 +18,7 @@ export function InstitutionTeamsTable({ rows }: { rows: InstitutionTeamRow[] }) 
     <EntityDataTable
       data={rows}
       ariaLabel="Institution teams"
+      initialSorting={[{ id: "name", desc: false }]}
       columns={[
         {
           id: "name",
@@ -31,6 +33,7 @@ export function InstitutionTeamsTable({ rows }: { rows: InstitutionTeamRow[] }) 
             </Link>
           ),
         },
+        { id: "division", accessorKey: "division", label: "Division" },
         { id: "record", accessorKey: "record", label: "W–L" },
         {
           id: "status",

@@ -36,3 +36,8 @@ export function buildTeamIdentifier(
   }
   return teamName.toUpperCase().replace(/\s+/g, "-");
 }
+
+/** Natural order: "CCGS 2" before "CCGS 10". */
+export function compareTeamNames(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}

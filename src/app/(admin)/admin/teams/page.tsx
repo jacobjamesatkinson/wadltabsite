@@ -3,7 +3,10 @@ import { db } from "@/db";
 import { competitionTimeslots } from "@/db/schema";
 import { PageHeader } from "@/components/page-header";
 import { ensureSiteCompetition } from "@/lib/competition";
-import { formatTeamDisplayName } from "@/lib/teams/display-name";
+import {
+  compareTeamNames,
+  formatTeamDisplayName,
+} from "@/lib/teams/display-name";
 import { formatTimeslotTime } from "@/lib/timeslots/format";
 import { TeamForm } from "./team-form";
 import { TeamsTable } from "./teams-table";
@@ -63,26 +66,29 @@ export default async function TeamsPage() {
         }
       />
       <TeamsTable
-        rows={teamRows.map((t) => {
-          const inst = t.institutionId ? instMap.get(t.institutionId) : null;
-          return {
-            id: t.id,
-            name: formatTeamDisplayName(t, inst),
-            identifier: t.identifier,
-            institution: inst?.shortName ?? "—",
-            division: t.divisionId
-              ? divMap.get(t.divisionId)?.name ?? "—"
-              : "—",
-            venue: t.venueId ? venueMap.get(t.venueId)?.name ?? "—" : "—",
-            timeslot: t.timeslotId
-              ? formatTimeslotTime(slotMap.get(t.timeslotId)?.startsAt ?? "") ||
-                "—"
-              : "—",
-            record: `${t.wins}–${t.losses}`,
-            speakers: speakerCount.get(t.id) ?? 0,
-            status: t.status,
-          };
-        })}
+        rows={teamRows
+          .map((t) => {
+            const inst = t.institutionId ? instMap.get(t.institutionId) : null;
+            return {
+              id: t.id,
+              name: formatTeamDisplayName(t, inst),
+              identifier: t.identifier,
+              institution: inst?.shortName ?? "—",
+              division: t.divisionId
+                ? divMap.get(t.divisionId)?.name ?? "—"
+                : "—",
+              venue: t.venueId ? venueMap.get(t.venueId)?.name ?? "—" : "—",
+              timeslot: t.timeslotId
+                ? formatTimeslotTime(
+                    slotMap.get(t.timeslotId)?.startsAt ?? ""
+                  ) || "—"
+                : "—",
+              record: `${t.wins}–${t.losses}`,
+              speakers: speakerCount.get(t.id) ?? 0,
+              status: t.status,
+            };
+          })
+          .sort((a, b) => compareTeamNames(a.name, b.name))}
       />
     </div>
   );

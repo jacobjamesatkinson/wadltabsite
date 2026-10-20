@@ -353,7 +353,12 @@ export const teams = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("team_competition_identifier").on(t.competitionId, t.identifier),
+    // Same team number may exist in different divisions (e.g. Shenton 1 Junior + Shenton 1 Novice).
+    uniqueIndex("team_competition_division_identifier").on(
+      t.competitionId,
+      t.divisionId,
+      t.identifier
+    ),
     index("teams_institution_idx").on(t.institutionId),
   ]
 );

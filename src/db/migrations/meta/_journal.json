@@ -64,6 +64,13 @@
       "when": 1792261000000,
       "tag": "0008_speaker_deletion_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792262000000,
+      "tag": "0009_team_identifier_per_division",
+      "breakpoints": true
     }
   ]
 }
