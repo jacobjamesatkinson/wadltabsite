@@ -62,9 +62,11 @@ export interface ColumnFilterItem<
 }
 
 declare module "@tanstack/react-table" {
-  interface ColumnFilter extends Partial<
-    Pick<ColumnFilterItem, "operator" | "variant" | "filterId">
-  > {}
+  interface ColumnFilter {
+    operator?: FilterOperator;
+    variant?: FilterVariant;
+    filterId?: string;
+  }
 }
 
 export interface DataTableColumnConfig {
