@@ -1,8 +1,8 @@
 # WADL Tab — Competition Management and Tabulation
 
-Production-oriented web app for Western Australian Debating League competition administration, draw generation, adjudicator allocation, results and role-specific portals.
+Web App for WADL competition season.
 
-## Quick start (local, no Docker)
+## Quick start
 
 Requires Node.js 20+.
 
@@ -60,4 +60,4 @@ DATABASE_URL=postgresql://wadl:wadl@localhost:5432/wadl_tab npm run db:setup
 
 - `/public/draw` — published draw (no auth)
 - `/team/[token]` — private student team portal
-- `/login` — Better Auth email/password (+ Google when configured)
+- `/login` — Better Auth email/password
