@@ -6,11 +6,23 @@ import * as schema from "@/db/schema";
 const googleEnabled =
   Boolean(process.env.GOOGLE_CLIENT_ID) && Boolean(process.env.GOOGLE_CLIENT_SECRET);
 
-export const auth = betterAuth({
-  baseURL:
+/** Better Auth requires an absolute URL including the scheme. */
+function resolveAuthBaseURL() {
+  const raw =
     process.env.BETTER_AUTH_URL ??
     process.env.NEXT_PUBLIC_APP_URL ??
-    "http://localhost:3000",
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined) ??
+    "http://localhost:3000";
+
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.includes("localhost") || raw.startsWith("127.")) {
+    return `http://${raw}`;
+  }
+  return `https://${raw}`;
+}
+
+export const auth = betterAuth({
+  baseURL: resolveAuthBaseURL(),
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, {
     provider: "pg",

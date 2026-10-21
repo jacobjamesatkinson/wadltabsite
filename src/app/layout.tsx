@@ -6,6 +6,9 @@ import { ensureDbReady } from "@/db";
 import { ensureSiteCompetition } from "@/lib/competition";
 import "./globals.css";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 export const metadata: Metadata = {
   title: "WADL Tab — Competition Management",
   description:
