@@ -13,6 +13,13 @@ export const metadata: Metadata = {
   title: "WADL Tab — Competition Management",
   description:
     "Western Australian Debating League competition management and tabulation system",
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.png", type: "image/png", sizes: "32x32" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default async function RootLayout({
