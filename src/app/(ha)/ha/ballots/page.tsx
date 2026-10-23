@@ -72,6 +72,8 @@ export default async function HaBallotsPage({
       timeslot: d.timeslotLabel,
       room: d.roomLabel || "—",
       division: d.divisionName,
+      divisionSort: d.divisionSort,
+      divisionChipColor: d.divisionChipColor,
       institutions: institutions || "—",
       affirmative: d.affirmative?.name ?? "Missing",
       negative: d.negative?.name ?? "Missing",

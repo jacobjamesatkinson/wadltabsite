@@ -103,7 +103,7 @@ export function partitionTeams(
 
   const venueOrder = new Map(venues.map((v, i) => [v.id, i]));
   const slotOrder = new Map(timeslots.map((t) => [t.id, t.sortOrder]));
-  const divisionOrder = new Map(divisions.map((d, i) => [d.id, i]));
+  const divisionOrder = new Map(divisions.map((d) => [d.id, d.sortOrder]));
 
   const ordered = [...groups.values()].sort((a, b) => {
     const v = (venueOrder.get(a.key.venueId) ?? 0) - (venueOrder.get(b.key.venueId) ?? 0);

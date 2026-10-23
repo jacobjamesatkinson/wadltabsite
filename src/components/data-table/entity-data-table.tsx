@@ -22,6 +22,8 @@ export type EntityColumn<TData extends RowData> = {
   enableColumnFilter?: boolean;
   /** Defaults to alphanumeric for text columns so "2" sorts before "10". */
   sortFn?: "alphanumeric" | "text" | "datetime";
+  /** Custom row compare; takes precedence over sortFn when set. */
+  compare?: (a: TData, b: TData) => number;
 };
 
 export function EntityDataTable<TData extends { id: string }>({
@@ -103,11 +105,18 @@ export function EntityDataTable<TData extends { id: string }>({
         },
         enableColumnFilter: col.enableColumnFilter ?? true,
         // Prefer natural order for labels like "CCGS 2" before "CCGS 10".
-        ...(col.sortFn
-          ? { sortFn: col.sortFn }
-          : variant === "number"
-            ? {}
-            : { sortFn: "alphanumeric" as const }),
+        ...(col.compare
+          ? {
+              sortFn: (
+                rowA: { original: TData },
+                rowB: { original: TData }
+              ) => col.compare!(rowA.original, rowB.original),
+            }
+          : col.sortFn
+            ? { sortFn: col.sortFn }
+            : variant === "number"
+              ? {}
+              : { sortFn: "alphanumeric" as const }),
       });
     }
 

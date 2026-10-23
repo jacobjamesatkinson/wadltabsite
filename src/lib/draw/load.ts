@@ -213,7 +213,12 @@ export async function loadDrawInput(roundId: string): Promise<DrawInputContext> 
     rooms: availableRooms.map((r) => ({ id: r.id, venueId: r.venueId, identifier: r.identifier })),
     timeslots: slotRows.map((s) => ({ id: s.id, startsAt: s.startsAt, sortOrder: s.sortOrder })),
     venues: venueRows.map((v) => ({ id: v.id, name: v.name })),
-    divisions: divisionRows.map((d) => ({ id: d.id, name: d.name })),
+    divisions: divisionRows.map((d) => ({
+      id: d.id,
+      name: d.name,
+      sortOrder: d.sortOrder,
+      chipColor: d.chipColor,
+    })),
     config,
     roundNumber: round.number,
   };

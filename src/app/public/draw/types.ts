@@ -17,6 +17,8 @@ export type PublicDrawRow = {
   comments: string;
   divisionId: string;
   divisionName: string;
+  divisionSort: number;
+  divisionChipColor: string | null;
   roundId: string;
   roundName: string;
   roundNumber: number;

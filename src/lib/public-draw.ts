@@ -150,6 +150,12 @@ export async function loadPublicDrawData() {
       divisionName: d.divisionId
         ? divMap.get(d.divisionId)?.name ?? "—"
         : "Unassigned",
+      divisionSort: d.divisionId
+        ? (divMap.get(d.divisionId)?.sortOrder ?? 999)
+        : 999,
+      divisionChipColor: d.divisionId
+        ? (divMap.get(d.divisionId)?.chipColor ?? null)
+        : null,
       roundId: d.roundId,
       roundName: round?.name ?? "—",
       roundNumber: round?.number ?? 0,

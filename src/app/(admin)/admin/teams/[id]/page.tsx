@@ -180,10 +180,15 @@ export default async function TeamDetailPage({
                 name: i.name,
                 shortName: i.shortName,
               }))}
-              divisions={divisions.map((d) => ({
-                id: d.id,
-                name: d.name,
-              }))}
+              divisions={[...divisions]
+                .sort(
+                  (a, b) =>
+                    a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)
+                )
+                .map((d) => ({
+                  id: d.id,
+                  name: d.name,
+                }))}
               venues={venues.map((v) => ({ id: v.id, name: v.name }))}
               timeslots={[...competitionSlots]
                 .sort((a, b) => a.startsAt.localeCompare(b.startsAt))

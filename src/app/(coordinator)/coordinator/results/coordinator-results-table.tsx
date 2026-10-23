@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useDataTable } from "@/hooks/use-data-table";
 import type { DataTableFeatures } from "@/lib/data-table-features";
+import { DivisionChip } from "@/components/division-chip";
 import { cn } from "@/lib/utils";
 
 export type RoundResultCell = {
@@ -25,6 +26,8 @@ export type CoordinatorResultsRow = {
   name: string;
   institution: string;
   division: string;
+  divisionSort: number;
+  divisionChipColor: string | null;
   record: string;
   results: Record<string, RoundResultCell>;
 };
@@ -78,14 +81,19 @@ export function CoordinatorResultsTable({
         .map((value) => ({ label: value, value })),
     [rows]
   );
-  const divisionOptions = React.useMemo(
-    () =>
-      [...new Set(rows.map((r) => r.division))]
-        .filter((v) => v && v !== "—")
-        .sort()
-        .map((value) => ({ label: value, value })),
-    [rows]
-  );
+  const divisionOptions = React.useMemo(() => {
+    const byName = new Map<string, number>();
+    for (const r of rows) {
+      if (!r.division || r.division === "—") continue;
+      const prev = byName.get(r.division);
+      if (prev == null || r.divisionSort < prev) {
+        byName.set(r.division, r.divisionSort);
+      }
+    }
+    return [...byName.entries()]
+      .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+      .map(([value]) => ({ label: value, value }));
+  }, [rows]);
 
   const columns = React.useMemo<
     ColumnDef<DataTableFeatures, CoordinatorResultsRow>[]
@@ -119,6 +127,18 @@ export function CoordinatorResultsTable({
         header: ({ column }) => (
           <DataTableColumnHeader column={column} label="Division" />
         ),
+        cell: ({ row }) => (
+          <DivisionChip
+            name={row.original.division}
+            color={row.original.divisionChipColor}
+          />
+        ),
+        sortFn: (
+          a: { original: CoordinatorResultsRow },
+          b: { original: CoordinatorResultsRow }
+        ) =>
+          a.original.divisionSort - b.original.divisionSort ||
+          a.original.division.localeCompare(b.original.division),
         meta: {
           label: "Division",
           variant: "multiSelect",

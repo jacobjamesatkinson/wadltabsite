@@ -36,11 +36,18 @@ export async function createCompetition(input: z.infer<typeof createSchema>) {
     config: defaultCompetitionConfig,
   });
 
-  for (const name of ["Novice A", "Junior A", "Senior A"]) {
+  const defaultDivisions = [
+    { name: "Novice A", sortOrder: 0, chipColor: "#3B82F6" },
+    { name: "Junior A", sortOrder: 1, chipColor: "#10B981" },
+    { name: "Senior A", sortOrder: 2, chipColor: "#F59E0B" },
+  ];
+  for (const div of defaultDivisions) {
     await db.insert(divisions).values({
       id: createId("div"),
       competitionId: id,
-      name,
+      name: div.name,
+      sortOrder: div.sortOrder,
+      chipColor: div.chipColor,
     });
   }
 
@@ -266,26 +273,51 @@ export async function updateRound(
   revalidatePath("/admin");
 }
 
+function normalizeChipColor(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const hex = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  if (!/^#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?$/.test(hex)) {
+    throw new Error("Chip colour must be a hex value like #3B82F6");
+  }
+  return hex.toUpperCase();
+}
+
 export async function createDivision(input: {
   competitionId: string;
   name: string;
+  sortOrder?: number;
+  chipColor?: string | null;
 }) {
   const ctx = await getAuthContext();
   if (!ctx) throw new Error("UNAUTHORIZED");
   requirePermission(ctx, "competitions:manage");
 
+  const existing = await db.query.divisions.findMany({
+    where: (t, { eq: e }) => e(t.competitionId, input.competitionId),
+  });
+  const nextSort =
+    input.sortOrder ??
+    (existing.length
+      ? Math.max(...existing.map((d) => d.sortOrder)) + 1
+      : 0);
+
   const id = createId("div");
+  const chipColor = normalizeChipColor(input.chipColor);
   await db.insert(divisions).values({
     id,
     competitionId: input.competitionId,
     name: input.name.trim(),
+    sortOrder: nextSort,
+    chipColor,
   });
   await writeAudit({
     actorId: ctx.userId,
     action: "division.create",
     entityType: "division",
     entityId: id,
-    details: input,
+    details: { ...input, sortOrder: nextSort, chipColor },
   });
   revalidatePath("/admin/settings/divisions");
   revalidatePath("/");
@@ -294,7 +326,11 @@ export async function createDivision(input: {
 
 export async function updateDivision(
   divisionId: string,
-  input: { name: string }
+  input: {
+    name?: string;
+    sortOrder?: number;
+    chipColor?: string | null;
+  }
 ) {
   const ctx = await getAuthContext();
   if (!ctx) throw new Error("UNAUTHORIZED");
@@ -305,19 +341,36 @@ export async function updateDivision(
   });
   if (!division) throw new Error("NOT_FOUND");
 
-  const name = input.name.trim();
-  if (!name) throw new Error("Division name required");
+  const patch: {
+    name?: string;
+    sortOrder?: number;
+    chipColor?: string | null;
+  } = {};
 
-  await db
-    .update(divisions)
-    .set({ name })
-    .where(eq(divisions.id, divisionId));
+  if (input.name !== undefined) {
+    const name = input.name.trim();
+    if (!name) throw new Error("Division name required");
+    patch.name = name;
+  }
+  if (input.sortOrder !== undefined) {
+    if (!Number.isFinite(input.sortOrder)) {
+      throw new Error("Sort order must be a number");
+    }
+    patch.sortOrder = Math.trunc(input.sortOrder);
+  }
+  if (input.chipColor !== undefined) {
+    patch.chipColor = normalizeChipColor(input.chipColor);
+  }
+
+  if (Object.keys(patch).length === 0) return;
+
+  await db.update(divisions).set(patch).where(eq(divisions.id, divisionId));
   await writeAudit({
     actorId: ctx.userId,
     action: "division.update",
     entityType: "division",
     entityId: divisionId,
-    details: { name },
+    details: patch,
   });
   revalidatePath("/admin/settings/divisions");
   revalidatePath("/");

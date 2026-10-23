@@ -77,7 +77,7 @@ export function PublicDrawListings({
   const divisionGroups = React.useMemo(() => {
     const map = new Map<
       string,
-      { id: string; name: string; rows: PublicDrawRow[] }
+      { id: string; name: string; sort: number; rows: PublicDrawRow[] }
     >();
     for (const row of roundRows) {
       const existing = map.get(row.divisionId);
@@ -87,11 +87,14 @@ export function PublicDrawListings({
         map.set(row.divisionId, {
           id: row.divisionId,
           name: row.divisionName,
+          sort: row.divisionSort,
           rows: [row],
         });
       }
     }
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return [...map.values()].sort(
+      (a, b) => a.sort - b.sort || a.name.localeCompare(b.name)
+    );
   }, [roundRows]);
 
   const activeDivisionId =
@@ -235,7 +238,6 @@ export function PublicDrawListings({
             rows={divisionRows}
             ariaLabel={`${activeDivision.name} draw`}
             idPrefix={activeDivision.id}
-            hideInstitutionFilter={Boolean(lockedInstitutions?.length)}
           />
         )}
       </div>

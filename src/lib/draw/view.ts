@@ -42,6 +42,8 @@ export type DrawViewDebate = {
   timeslotLabel: string;
   divisionId: string | null;
   divisionName: string;
+  divisionSort: number;
+  divisionChipColor: string | null;
   roomId: string | null;
   roomLabel: string;
   bracket: number | null;
@@ -73,7 +75,12 @@ export type DrawView = {
   teams: DrawViewTeam[];
   venues: Array<{ id: string; name: string; rooms: Array<{ id: string; identifier: string }> }>;
   timeslots: Array<{ id: string; label: string; sortOrder: number }>;
-  divisions: Array<{ id: string; name: string }>;
+  divisions: Array<{
+    id: string;
+    name: string;
+    sortOrder: number;
+    chipColor: string | null;
+  }>;
 };
 
 export async function loadDrawView(roundId: string): Promise<DrawView> {
@@ -173,7 +180,15 @@ export async function loadDrawView(roundId: string): Promise<DrawView> {
     timeslotId: d.timeslotId,
     timeslotLabel: slotLabel(d.timeslotId),
     divisionId: d.divisionId,
-    divisionName: d.divisionId ? divisionMap.get(d.divisionId)?.name ?? "—" : "—",
+    divisionName: d.divisionId
+      ? divisionMap.get(d.divisionId)?.name ?? "—"
+      : "—",
+    divisionSort: d.divisionId
+      ? (divisionMap.get(d.divisionId)?.sortOrder ?? 999)
+      : 999,
+    divisionChipColor: d.divisionId
+      ? (divisionMap.get(d.divisionId)?.chipColor ?? null)
+      : null,
     roomId: d.roomId,
     roomLabel: d.roomId ? roomMap.get(d.roomId)?.identifier ?? "?" : "",
     bracket: d.bracket,
@@ -284,6 +299,13 @@ export async function loadDrawView(roundId: string): Promise<DrawView> {
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     timeslots: slotRows.map((s) => ({ id: s.id, label: formatTimeslotTime(s.startsAt), sortOrder: s.sortOrder })),
-    divisions: divisionRows.map((d) => ({ id: d.id, name: d.name })),
+    divisions: [...divisionRows]
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+      .map((d) => ({
+        id: d.id,
+        name: d.name,
+        sortOrder: d.sortOrder,
+        chipColor: d.chipColor,
+      })),
   };
 }

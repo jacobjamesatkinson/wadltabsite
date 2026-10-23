@@ -44,7 +44,9 @@ const baseInput = {
   })),
   timeslots: [{ id: "t1", startsAt: "18:00", sortOrder: 0 }],
   venues: [{ id: "v1", name: "Venue 1" }],
-  divisions: [{ id: "div1", name: "Division 1" }],
+  divisions: [
+    { id: "div1", name: "Division 1", sortOrder: 0, chipColor: null },
+  ],
   config,
   roundNumber: 3,
 };
@@ -212,7 +214,10 @@ describe("generateDraw", () => {
       rooms: [...baseInput.rooms, { id: "x1", venueId: "v2", identifier: "A" }],
       timeslots: [...baseInput.timeslots, { id: "t2", startsAt: "19:00", sortOrder: 1 }],
       venues: [...baseInput.venues, { id: "v2", name: "Venue 2" }],
-      divisions: [...baseInput.divisions, { id: "div2", name: "Division 2" }],
+      divisions: [
+        ...baseInput.divisions,
+        { id: "div2", name: "Division 2", sortOrder: 1, chipColor: null },
+      ],
       seed: "partition",
     });
     expect(result.report.fatal).toBe(false);

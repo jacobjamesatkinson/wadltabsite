@@ -38,7 +38,7 @@ export default async function CoordinatorTeamsPage() {
     ]);
 
   const instMap = new Map(institutionRows.map((i) => [i.id, i]));
-  const divMap = new Map(divisionRows.map((d) => [d.id, d.name]));
+  const divMap = new Map(divisionRows.map((d) => [d.id, d]));
   const venueMap = new Map(venueRows.map((v) => [v.id, v.name]));
   const slotMap = new Map(
     slotRows.map((s) => [s.id, formatTimeslotTime(s.startsAt)])
@@ -63,7 +63,15 @@ export default async function CoordinatorTeamsPage() {
         name: formatTeamDisplayName(t, institution ?? null),
         identifier: t.identifier,
         institution: institution?.name ?? "—",
-        division: t.divisionId ? (divMap.get(t.divisionId) ?? "—") : "—",
+        division: t.divisionId
+          ? (divMap.get(t.divisionId)?.name ?? "—")
+          : "—",
+        divisionSort: t.divisionId
+          ? (divMap.get(t.divisionId)?.sortOrder ?? 999)
+          : 999,
+        divisionChipColor: t.divisionId
+          ? (divMap.get(t.divisionId)?.chipColor ?? null)
+          : null,
         venue: t.venueId ? (venueMap.get(t.venueId) ?? "—") : "—",
         timeslot: t.timeslotId ? (slotMap.get(t.timeslotId) ?? "—") : "—",
         record: `${t.wins}–${t.losses}`,

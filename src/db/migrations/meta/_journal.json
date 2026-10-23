@@ -71,6 +71,13 @@
       "when": 1792262000000,
       "tag": "0009_team_identifier_per_division",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792263000000,
+      "tag": "0010_division_sort_and_chip_color",
+      "breakpoints": true
     }
   ]
 }

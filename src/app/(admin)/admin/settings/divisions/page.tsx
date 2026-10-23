@@ -32,6 +32,8 @@ export default async function ManageDivisionsPage() {
         divisions={divisionRows.map((d) => ({
           id: d.id,
           name: d.name,
+          sortOrder: d.sortOrder,
+          chipColor: d.chipColor,
           teamCount: teamCount.get(d.id) ?? 0,
         }))}
       />

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { PageHeader } from "@/components/page-header";
+import { DivisionChip } from "@/components/division-chip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,20 +54,32 @@ async function CreateDrawView({ roundId, roundName }: { roundId: string; roundNa
 
   const venueName = new Map(input.venues.map((v) => [v.id, v.name]));
   const slotLabel = new Map(input.timeslots.map((t) => [t.id, formatTimeslotTime(t.startsAt)]));
-  const divisionName = new Map(input.divisions.map((d) => [d.id, d.name]));
+  const divisionById = new Map(input.divisions.map((d) => [d.id, d]));
 
   // Group summary: venue × timeslot × division
   const groupSummary = new Map<
     string,
-    { venue: string; timeslot: string; division: string; teams: number; venueId: string; timeslotId: string }
+    {
+      venue: string;
+      timeslot: string;
+      division: string;
+      divisionSort: number;
+      divisionChipColor: string | null;
+      teams: number;
+      venueId: string;
+      timeslotId: string;
+    }
   >();
   for (const t of input.teams) {
     if (!t.venueId || !t.timeslotId || !t.divisionId) continue;
     const key = `${t.venueId}|${t.timeslotId}|${t.divisionId}`;
+    const div = divisionById.get(t.divisionId);
     const g = groupSummary.get(key) ?? {
       venue: venueName.get(t.venueId) ?? "?",
       timeslot: slotLabel.get(t.timeslotId) ?? "?",
-      division: divisionName.get(t.divisionId) ?? "?",
+      division: div?.name ?? "?",
+      divisionSort: div?.sortOrder ?? 999,
+      divisionChipColor: div?.chipColor ?? null,
       teams: 0,
       venueId: t.venueId,
       timeslotId: t.timeslotId,
@@ -122,7 +135,13 @@ async function CreateDrawView({ roundId, roundName }: { roundId: string; roundNa
               </TableHeader>
               <TableBody>
                 {[...groupSummary.values()]
-                  .sort((a, b) => a.venue.localeCompare(b.venue) || a.timeslot.localeCompare(b.timeslot) || a.division.localeCompare(b.division))
+                  .sort(
+                    (a, b) =>
+                      a.venue.localeCompare(b.venue) ||
+                      a.timeslot.localeCompare(b.timeslot) ||
+                      a.divisionSort - b.divisionSort ||
+                      a.division.localeCompare(b.division)
+                  )
                   .map((g) => {
                     const needed = debatesByVenueSlot.get(`${g.venueId}|${g.timeslotId}`) ?? 0;
                     const have = roomsByVenue.get(g.venueId) ?? 0;
@@ -131,7 +150,12 @@ async function CreateDrawView({ roundId, roundName }: { roundId: string; roundNa
                       <TableRow key={`${g.venueId}|${g.timeslotId}|${g.division}`}>
                         <TableCell>{g.venue}</TableCell>
                         <TableCell>{g.timeslot}</TableCell>
-                        <TableCell>{g.division}</TableCell>
+                        <TableCell>
+                          <DivisionChip
+                            name={g.division}
+                            color={g.divisionChipColor}
+                          />
+                        </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {g.teams}
                           {odd ? <span className="ml-1 text-xs text-muted-foreground">(bye)</span> : null}
@@ -268,7 +292,12 @@ function ExistingDrawView({ view }: { view: DrawView }) {
                         {d.negative?.name ?? "Missing"}
                         {d.negative ? <span className="ml-1 text-xs text-muted-foreground">({d.negative.wins})</span> : null}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{d.divisionName}</TableCell>
+                      <TableCell>
+                        <DivisionChip
+                          name={d.divisionName}
+                          color={d.divisionChipColor}
+                        />
+                      </TableCell>
                       <TableCell className={d.adjudicators.length ? "" : "text-muted-foreground"}>
                         {d.adjudicators.map((a) => a.name).join(", ") || "Unallocated"}
                       </TableCell>

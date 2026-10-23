@@ -45,6 +45,8 @@ export type DrawVenue = {
 export type DrawDivision = {
   id: string;
   name: string;
+  sortOrder: number;
+  chipColor: string | null;
 };
 
 /** A key identifying one independent pairing group. */

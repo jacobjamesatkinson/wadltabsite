@@ -251,6 +251,10 @@ export const divisions = pgTable("divisions", {
     .notNull()
     .references(() => competitions.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  /** Lower values appear first when sorting division columns (not alphabetical). */
+  sortOrder: integer("sort_order").notNull().default(0),
+  /** Hex colour (e.g. #3B82F6) used for division chips in tables. */
+  chipColor: text("chip_color"),
   venueId: text("venue_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

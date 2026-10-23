@@ -9,6 +9,7 @@ import { DataTableAdvancedToolbar } from "@/components/data-table/data-table-adv
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header";
 import { DataTableFilterMenu } from "@/components/data-table/data-table-filter-menu";
 import { DataTableSortMenu } from "@/components/data-table/data-table-sort-menu";
+import { DivisionChip } from "@/components/division-chip";
 import { useDataTable } from "@/hooks/use-data-table";
 import type { DataTableFeatures } from "@/lib/data-table-features";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,8 @@ export type HaBallotRow = {
   timeslot: string;
   room: string;
   division: string;
+  divisionSort: number;
+  divisionChipColor: string | null;
   institutions: string;
   affirmative: string;
   negative: string;
@@ -52,10 +55,19 @@ export function HaBallotsTable({ data }: { data: HaBallotRow[] }) {
     () => uniqueOptions(data.map((r) => r.timeslot)),
     [data]
   );
-  const divisionOptions = React.useMemo(
-    () => uniqueOptions(data.map((r) => r.division)),
-    [data]
-  );
+  const divisionOptions = React.useMemo(() => {
+    const byName = new Map<string, number>();
+    for (const r of data) {
+      if (!r.division || r.division === "—") continue;
+      const prev = byName.get(r.division);
+      if (prev == null || r.divisionSort < prev) {
+        byName.set(r.division, r.divisionSort);
+      }
+    }
+    return [...byName.entries()]
+      .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+      .map(([value]) => ({ label: value, value }));
+  }, [data]);
   const institutionOptions = React.useMemo(
     () =>
       uniqueOptions(
@@ -165,6 +177,18 @@ export function HaBallotsTable({ data }: { data: HaBallotRow[] }) {
         header: ({ column }) => (
           <DataTableColumnHeader column={column} label="Division" />
         ),
+        cell: ({ row }) => (
+          <DivisionChip
+            name={row.original.division}
+            color={row.original.divisionChipColor}
+          />
+        ),
+        sortFn: (
+          a: { original: HaBallotRow },
+          b: { original: HaBallotRow }
+        ) =>
+          a.original.divisionSort - b.original.divisionSort ||
+          a.original.division.localeCompare(b.original.division),
         meta: {
           label: "Division",
           variant: "multiSelect",

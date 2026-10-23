@@ -28,6 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DivisionChip } from "@/components/division-chip";
 import type { PublicDrawRow } from "./types";
 
 function naturalCompare(a: string, b: string) {
@@ -41,7 +42,7 @@ function uniqueOptions(values: string[]) {
 }
 
 type SortKey =
-  | "divisionName"
+  | "divisionSort"
   | "room"
   | "affirmative"
   | "negative"
@@ -181,10 +182,19 @@ export function PublicDrawVenueView({
     () => uniqueOptions(rows.map((r) => r.venue)),
     [rows]
   );
-  const divisionOptions = useMemo(
-    () => uniqueOptions(rows.map((r) => r.divisionName)),
-    [rows]
-  );
+  const divisionOptions = useMemo(() => {
+    const byName = new Map<string, number>();
+    for (const r of rows) {
+      if (!r.divisionName) continue;
+      const prev = byName.get(r.divisionName);
+      if (prev == null || r.divisionSort < prev) {
+        byName.set(r.divisionName, r.divisionSort);
+      }
+    }
+    return [...byName.entries()]
+      .sort((a, b) => a[1] - b[1] || naturalCompare(a[0], b[0]))
+      .map(([value]) => ({ label: value, value }));
+  }, [rows]);
   const institutionOptions = useMemo(
     () => uniqueOptions(rows.flatMap((r) => r.institutions)),
     [rows]
@@ -253,10 +263,18 @@ export function PublicDrawVenueView({
     }
 
     const cmp = (a: PublicDrawRow, b: PublicDrawRow) => {
-      const av = String(a[sortKey] ?? "");
-      const bv = String(b[sortKey] ?? "");
-      const result =
-        sortKey === "room" ? naturalCompare(av, bv) : av.localeCompare(bv);
+      let result: number;
+      if (sortKey === "divisionSort") {
+        result =
+          a.divisionSort - b.divisionSort ||
+          a.divisionName.localeCompare(b.divisionName);
+      } else if (sortKey === "room") {
+        result = naturalCompare(a.room, b.room);
+      } else {
+        result = String(a[sortKey] ?? "").localeCompare(
+          String(b[sortKey] ?? "")
+        );
+      }
       return sortDesc ? -result : result;
     };
 
@@ -383,9 +401,9 @@ export function PublicDrawVenueView({
                           <SortableHead
                             label="Division"
                             className="w-[140px]"
-                            active={sortKey === "divisionName"}
+                            active={sortKey === "divisionSort"}
                             desc={sortDesc}
-                            onClick={() => toggleSort("divisionName")}
+                            onClick={() => toggleSort("divisionSort")}
                           />
                           <SortableHead
                             label="Affirmative"
@@ -411,7 +429,12 @@ export function PublicDrawVenueView({
                         {slot.rows.map((row) => (
                           <TableRow key={row.id}>
                             <TableCell>{row.room}</TableCell>
-                            <TableCell>{row.divisionName}</TableCell>
+                            <TableCell>
+                              <DivisionChip
+                                name={row.divisionName}
+                                color={row.divisionChipColor}
+                              />
+                            </TableCell>
                             <TableCell>{row.affirmative}</TableCell>
                             <TableCell>{row.negative}</TableCell>
                             <TableCell className="text-muted-foreground">

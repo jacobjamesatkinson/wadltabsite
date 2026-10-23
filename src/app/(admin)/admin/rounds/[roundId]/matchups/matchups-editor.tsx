@@ -14,6 +14,7 @@ import {
   swapSides,
   unplaceTeam,
 } from "@/app/actions/draws";
+import { DivisionChip } from "@/components/division-chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { DrawView, DrawViewDebate, DrawViewTeam } from "@/lib/draw/view";
@@ -282,7 +283,11 @@ export function MatchupsEditor({ view }: { view: DrawView }) {
                       <div className="min-w-0 overflow-hidden">
                         <DrawFlags flags={d.flags} />
                         {d.divisionId && divisionsInGroup.length > 1 ? (
-                          <span className="block truncate text-[11px] text-muted-foreground">{d.divisionName}</span>
+                          <DivisionChip
+                            name={d.divisionName}
+                            color={d.divisionChipColor}
+                            className="mt-0.5 max-w-full truncate"
+                          />
                         ) : null}
                       </div>
                       <button

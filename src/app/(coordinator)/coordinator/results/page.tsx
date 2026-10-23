@@ -34,7 +34,7 @@ export default async function CoordinatorResultsPage() {
 
   const teamIds = teamRows.map((t) => t.id);
   const instMap = new Map(institutionRows.map((i) => [i.id, i]));
-  const divMap = new Map(divisionRows.map((d) => [d.id, d.name]));
+  const divMap = new Map(divisionRows.map((d) => [d.id, d]));
 
   const allDebates =
     teamIds.length > 0
@@ -119,7 +119,15 @@ export default async function CoordinatorResultsPage() {
         id: t.id,
         name: formatTeamDisplayName(t, institution ?? null),
         institution: institution?.name ?? "—",
-        division: t.divisionId ? (divMap.get(t.divisionId) ?? "—") : "—",
+        division: t.divisionId
+          ? (divMap.get(t.divisionId)?.name ?? "—")
+          : "—",
+        divisionSort: t.divisionId
+          ? (divMap.get(t.divisionId)?.sortOrder ?? 999)
+          : 999,
+        divisionChipColor: t.divisionId
+          ? (divMap.get(t.divisionId)?.chipColor ?? null)
+          : null,
         record: `${t.wins}–${t.losses}`,
         results: resultsByTeam.get(t.id) ?? {},
       };

@@ -51,10 +51,15 @@ export default async function TeamsPage() {
               name: i.name,
               shortName: i.shortName,
             }))}
-            divisions={divisions.map((d) => ({
-              id: d.id,
-              name: d.name,
-            }))}
+            divisions={[...divisions]
+              .sort(
+                (a, b) =>
+                  a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)
+              )
+              .map((d) => ({
+                id: d.id,
+                name: d.name,
+              }))}
             venues={venues.map((v) => ({ id: v.id, name: v.name }))}
             timeslots={[...timeslots]
               .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
@@ -77,6 +82,12 @@ export default async function TeamsPage() {
               division: t.divisionId
                 ? divMap.get(t.divisionId)?.name ?? "—"
                 : "—",
+              divisionSort: t.divisionId
+                ? (divMap.get(t.divisionId)?.sortOrder ?? 999)
+                : 999,
+              divisionChipColor: t.divisionId
+                ? (divMap.get(t.divisionId)?.chipColor ?? null)
+                : null,
               venue: t.venueId ? venueMap.get(t.venueId)?.name ?? "—" : "—",
               timeslot: t.timeslotId
                 ? formatTimeslotTime(

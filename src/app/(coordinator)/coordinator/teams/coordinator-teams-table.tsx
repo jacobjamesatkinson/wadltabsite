@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { EntityDataTable } from "@/components/data-table/entity-data-table";
+import { DivisionChip } from "@/components/division-chip";
 
 export type CoordinatorTeamRow = {
   id: string;
@@ -9,6 +10,8 @@ export type CoordinatorTeamRow = {
   identifier: string;
   institution: string;
   division: string;
+  divisionSort: number;
+  divisionChipColor: string | null;
   venue: string;
   timeslot: string;
   record: string;
@@ -47,6 +50,12 @@ export function CoordinatorTeamsTable({ rows }: { rows: CoordinatorTeamRow[] }) 
           accessorKey: "division",
           label: "Division",
           variant: "select",
+          cell: (row) => (
+            <DivisionChip name={row.division} color={row.divisionChipColor} />
+          ),
+          compare: (a, b) =>
+            a.divisionSort - b.divisionSort ||
+            a.division.localeCompare(b.division),
         },
         { id: "venue", accessorKey: "venue", label: "Venue" },
         { id: "timeslot", accessorKey: "timeslot", label: "Timeslot" },

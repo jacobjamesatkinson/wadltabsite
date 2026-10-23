@@ -22,31 +22,26 @@ export function PublicDrawDivisionTable({
   rows,
   ariaLabel,
   idPrefix,
-  hideInstitutionFilter = false,
 }: {
   rows: PublicDrawRow[];
   ariaLabel: string;
   idPrefix: string;
-  hideInstitutionFilter?: boolean;
 }) {
   const venueOptions = React.useMemo(
     () => uniqueOptions(rows.map((r) => r.venue)),
     [rows]
   );
-  const roomOptions = React.useMemo(
-    () => uniqueOptions(rows.map((r) => r.room)),
+  const dateOptions = React.useMemo(
+    () =>
+      [...new Map(rows.map((r) => [r.date, r.dateSort])).entries()]
+        .sort((a, b) => (a[1] || "9999").localeCompare(b[1] || "9999"))
+        .map(([date]) => ({ label: date, value: date })),
     [rows]
   );
   const timeslotOptions = React.useMemo(
     () => uniqueOptions(rows.map((r) => r.timeslot)),
     [rows]
   );
-  const institutionOptions = React.useMemo(
-    () => uniqueOptions(rows.flatMap((r) => r.institutions)),
-    [rows]
-  );
-
-  const institutionColumnId = `${idPrefix}-institution`;
 
   const columns = React.useMemo<ColumnDef<DataTableFeatures, PublicDrawRow>[]>(
     () => [
@@ -71,12 +66,32 @@ export function PublicDrawDivisionTable({
         enableColumnFilter: true,
       },
       {
+        id: `${idPrefix}-date`,
+        accessorKey: "date",
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} label="Date" />
+        ),
+        sortFn: (
+          a: { original: PublicDrawRow },
+          b: { original: PublicDrawRow }
+        ) =>
+          (a.original.dateSort || "9999-99-99").localeCompare(
+            b.original.dateSort || "9999-99-99"
+          ) || a.original.date.localeCompare(b.original.date),
+        meta: {
+          label: "Date",
+          variant: "multiSelect",
+          options: dateOptions,
+        },
+        enableColumnFilter: true,
+      },
+      {
         id: `${idPrefix}-timeslot`,
         accessorKey: "timeslot",
         header: ({ column }) => (
           <DataTableColumnHeader column={column} label="Timeslot" />
         ),
-        sortingFn: (
+        sortFn: (
           a: { original: PublicDrawRow },
           b: { original: PublicDrawRow }
         ) =>
@@ -95,35 +110,8 @@ export function PublicDrawDivisionTable({
         header: ({ column }) => (
           <DataTableColumnHeader column={column} label="Room" />
         ),
-        meta: {
-          label: "Room",
-          variant: "multiSelect",
-          options: roomOptions,
-        },
-        enableColumnFilter: true,
-      },
-      {
-        id: institutionColumnId,
-        accessorFn: (row) => row.institutions.join("|"),
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} label="Institution" />
-        ),
-        cell: ({ row }) => row.original.institutions.join(", ") || "—",
-        filterFn: (row, _columnId, filterValue) => {
-          const selected = Array.isArray(filterValue)
-            ? filterValue.map(String)
-            : filterValue
-              ? [String(filterValue)]
-              : [];
-          if (selected.length === 0) return true;
-          return row.original.institutions.some((name) => selected.includes(name));
-        },
-        meta: {
-          label: "Institution",
-          variant: "multiSelect",
-          options: institutionOptions,
-        },
-        enableColumnFilter: !hideInstitutionFilter,
+        meta: { label: "Room", variant: "text" },
+        enableColumnFilter: false,
       },
       {
         id: `${idPrefix}-affirmative`,
@@ -142,7 +130,7 @@ export function PublicDrawDivisionTable({
           );
         },
         meta: {
-          label: "Team",
+          label: "Affirmative",
           variant: "text",
           placeholder: "Search teams…",
         },
@@ -170,15 +158,7 @@ export function PublicDrawDivisionTable({
         enableColumnFilter: false,
       },
     ],
-    [
-      idPrefix,
-      institutionColumnId,
-      venueOptions,
-      roomOptions,
-      timeslotOptions,
-      institutionOptions,
-      hideInstitutionFilter,
-    ]
+    [idPrefix, venueOptions, dateOptions, timeslotOptions]
   );
 
   const { table } = useDataTable({
@@ -194,7 +174,6 @@ export function PublicDrawDivisionTable({
     },
     initialState: {
       sorting: [{ id: `${idPrefix}-timeslot`, desc: false }],
-      columnVisibility: { [institutionColumnId]: false },
       // Effectively unlimited — show the full draw without paging
       pagination: { pageIndex: 0, pageSize: Number.MAX_SAFE_INTEGER },
     },
